@@ -415,30 +415,29 @@ func detectCemuDirectory() (cemuDir string, mlcDir string) {
 
 func resolveMLCDestPath(baseDir, titleID string) string {
 	clean := cemumegadownloader.NormalizeTID(titleID)
-	high := clean
-	low := ""
-	if len(clean) >= 16 {
-		high = clean[:8]
-		low = clean[8:]
+	if len(clean) < 16 {
+		clean = fmt.Sprintf("%016s", clean)
 	}
 
+	high := clean[:8]
+	low := clean[8:]
+
+	// Routage dynamique et additif :
+	// Uniquement les jeux, démos, mises à jour et DLC vont dans "usr/title"
+	// N'importe quel autre Title ID High (ex: 0005000e, 00050010, 0005001b, 00050030...)
+	// créera dynamiquement son dossier parent dans "sys/title/<high>/<low>"
 	subFolder := "sys"
-	if high == "0005000b" || high == "00050000" || high == "00050002" || high == "0005000c" || high == "0005000e" {
+	switch high {
+	case "00050000", "00050002", "0005000b", "0005000c":
 		subFolder = "usr"
 	}
 
 	baseClean := cleanPathInput(baseDir)
 	if strings.HasSuffix(strings.ToLower(baseClean), "mlc01") {
-		if low != "" {
-			return filepath.Join(baseClean, subFolder, "title", high, low)
-		}
-		return filepath.Join(baseClean, subFolder, "title", clean)
+		return filepath.Join(baseClean, subFolder, "title", high, low)
 	}
 
-	if low != "" {
-		return filepath.Join(baseClean, "mlc01", subFolder, "title", high, low)
-	}
-	return filepath.Join(baseClean, "mlc01", subFolder, "title", clean)
+	return filepath.Join(baseClean, "mlc01", subFolder, "title", high, low)
 }
 
 func ensureTitlesJSONData(client *http.Client) ([]byte, error) {
