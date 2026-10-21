@@ -422,10 +422,6 @@ func resolveMLCDestPath(baseDir, titleID string) string {
 	high := clean[:8]
 	low := clean[8:]
 
-	// Routage dynamique et additif :
-	// Uniquement les jeux, démos, mises à jour et DLC vont dans "usr/title"
-	// N'importe quel autre Title ID High (ex: 0005000e, 00050010, 0005001b, 00050030...)
-	// créera dynamiquement son dossier parent dans "sys/title/<high>/<low>"
 	subFolder := "sys"
 	switch high {
 	case "00050000", "00050002", "0005000b", "0005000c":
