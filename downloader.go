@@ -1677,6 +1677,29 @@ func initMiiDatabaseFiles(dbDir string) error {
 	return writeIfMissing(filepath.Join(dbDir, "FCL_DB.dat"), fclDB)
 }
 
+func getPinnedTitleVersion(normTID string) int {
+	switch strings.ToLower(normTID) {
+	case "0005001010047200":
+		return 178
+	case "0005001010049200":
+		return 103
+	}
+	return 0
+}
+
+func initSystemActData(mlcRoot string) error {
+	actDir := filepath.Join(mlcRoot, "usr", "save", "system", "act", "80000001")
+	if err := os.MkdirAll(actDir, 0755); err != nil {
+		return err
+	}
+	actFile := filepath.Join(actDir, "account.dat")
+	if _, err := os.Stat(actFile); err == nil {
+		return nil
+	}
+	content := "AccountInstance_20120705\r\nPersistentId=80000001\r\nTransferableIdBase=2000004480a321a\r\nUuid=c2d56199dcb71ded5d09ec93480a321a\r\nAccountId=\r\nSimpleAddressId=0\r\nPrincipalId=0\r\nAccountPassword=\r\nParentalControlsPin=\r\n"
+	return os.WriteFile(actFile, []byte(content), 0644)
+}
+
 func initMiiStudioSave(commonDir string) error {
 	savePath := filepath.Join(commonDir, "stadio.sav")
 	if _, err := os.Stat(savePath); err == nil {
@@ -1746,6 +1769,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	if err := initMiiDatabaseFiles(miiDBDir); err != nil {
 		return totalCopied, fmt.Errorf("failed to initialize Mii database: %w", err)
 	}
+		_ = initSystemActData(mlcRoot)
 	if err := initMiiStudioSave(miiCommonDir); err != nil {
 		return totalCopied, fmt.Errorf("failed to initialize Mii Studio save: %w", err)
 	}
@@ -1955,6 +1979,9 @@ func CleanRawNUSFiles(dir string, titleID string) {
 func GetTitleSize(titleID string, client *http.Client) (int64, error) {
 	cleanTID := NormalizeTID(titleID)
 	url := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s/tmd", cleanTID)
+	if v := getPinnedTitleVersion(cleanTID); v > 0 {
+		url = fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s/tmd.%d", cleanTID, v)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -2108,8 +2135,12 @@ func DownloadAndExtractTitle(
 		return err
 	}
 
+	tmdURL := fmt.Sprintf("%s/tmd", baseURL)
+	if v := getPinnedTitleVersion(normTID); v > 0 {
+		tmdURL = fmt.Sprintf("%s/tmd.%d", baseURL, v)
+	}
 	tmdPath := filepath.Join(targetDir, "title.tmd")
-	if err := downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil); err != nil {
+	if err := downloadFile(ctx, client, tmdURL, tmdPath, nil); err != nil {
 		return err
 	}
 

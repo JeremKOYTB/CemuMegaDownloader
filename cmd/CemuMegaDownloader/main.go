@@ -419,8 +419,11 @@ func resolveMLCDestPath(baseDir, titleID string) string {
 		clean = fmt.Sprintf("%016s", clean)
 	}
 
-	high := clean[:8]
+	high := strings.ToLower(clean[:8])
 	low := clean[8:]
+	if high == "0005000e" || high == "00050030" {
+		low = strings.ToUpper(low)
+	}
 
 	subFolder := "sys"
 	switch high {

@@ -9,7 +9,7 @@
       "name": "DRH firmware"
     },
     {
-      "titleID": "0005000e1fbf1000",
+      "titleID": "0005000e1FBF1000",
       "name": "DRC System Applet"
     },
     {
@@ -181,24 +181,12 @@
       "name": "Internet Browser Shared Data"
     },
     {
-      "titleID": "0005003010010209",
-      "name": "HOME Menu (OSv9)"
-    },
-    {
       "titleID": "000500301001020a",
       "name": "HOME Menu (OSv10)"
     },
     {
-      "titleID": "0005003010011209",
-      "name": "Fatal Error Viewer (OSv9)"
-    },
-    {
       "titleID": "000500301001120a",
       "name": "Fatal Error Viewer (OSv10)"
-    },
-    {
-      "titleID": "00050030100112ff",
-      "name": "Fatal Error Viewer (OSv255)"
     },
     {
       "titleID": "000500301001220a",
@@ -221,10 +209,6 @@
       "name": "Miiverse"
     },
     {
-      "titleID": "0005003010017209",
-      "name": "Wii U Electronic Manual (OSv9)"
-    },
-    {
       "titleID": "000500301001720a",
       "name": "Wii U Electronic Manual (OSv10)"
     },
@@ -237,7 +221,7 @@
       "name": "Miiverse Post App"
     },
     {
-      "titleID": "000500301001a10a",
+      "titleID": "000500301001A10A",
       "name": "AOC Overlay App"
     },
     {
@@ -255,7 +239,7 @@
       "name": "DRH firmware"
     },
     {
-      "titleID": "0005000e1fbf1000",
+      "titleID": "0005000e1FBF1000",
       "name": "DRC System Applet"
     },
     {
@@ -427,24 +411,12 @@
       "name": "Internet Browser Shared Data"
     },
     {
-      "titleID": "0005003010010109",
-      "name": "HOME Menu (OSv9)"
-    },
-    {
       "titleID": "000500301001010a",
       "name": "HOME Menu (OSv10)"
     },
     {
-      "titleID": "0005003010011109",
-      "name": "Fatal Error Viewer (OSv9)"
-    },
-    {
       "titleID": "000500301001110a",
       "name": "Fatal Error Viewer (OSv10)"
-    },
-    {
-      "titleID": "00050030100111ff",
-      "name": "Fatal Error Viewer (OSv255)"
     },
     {
       "titleID": "000500301001210a",
@@ -467,10 +439,6 @@
       "name": "Miiverse"
     },
     {
-      "titleID": "0005003010017109",
-      "name": "Wii U Electronic Manual (OSv9)"
-    },
-    {
       "titleID": "000500301001710a",
       "name": "Wii U Electronic Manual (OSv10)"
     },
@@ -483,7 +451,7 @@
       "name": "Miiverse Post App"
     },
     {
-      "titleID": "000500301001a10a",
+      "titleID": "000500301001A10A",
       "name": "AOC Overlay App"
     },
     {
@@ -501,7 +469,7 @@
       "name": "DRH firmware"
     },
     {
-      "titleID": "0005000e1fbf1000",
+      "titleID": "0005000e1FBF1000",
       "name": "DRC System Applet"
     },
     {
@@ -673,24 +641,12 @@
       "name": "Internet Browser Shared Data"
     },
     {
-      "titleID": "0005003010010009",
-      "name": "HOME Menu (OSv9)"
-    },
-    {
       "titleID": "000500301001000a",
       "name": "HOME Menu (OSv10)"
     },
     {
-      "titleID": "0005003010011009",
-      "name": "Fatal Error Viewer (OSv9)"
-    },
-    {
       "titleID": "000500301001100a",
       "name": "Fatal Error Viewer (OSv10)"
-    },
-    {
-      "titleID": "00050030100110ff",
-      "name": "Fatal Error Viewer (OSv255)"
     },
     {
       "titleID": "000500301001200a",
@@ -713,10 +669,6 @@
       "name": "Miiverse"
     },
     {
-      "titleID": "0005003010017009",
-      "name": "Wii U Electronic Manual (OSv9)"
-    },
-    {
       "titleID": "000500301001700a",
       "name": "Wii U Electronic Manual (OSv10)"
     },
@@ -729,7 +681,7 @@
       "name": "Miiverse Post App"
     },
     {
-      "titleID": "000500301001a10a",
+      "titleID": "000500301001A10A",
       "name": "AOC Overlay App"
     },
     {
