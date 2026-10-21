@@ -1608,9 +1608,9 @@ func GetSaveMetaTIDLows(region string) []string {
 	}
 }
 
-func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
-	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
-	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta")
+func copyMenuMetaToSave(mlcRoot, menuTIDLow, targetTIDLow string) (int, error) {
+	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTIDLow, "meta")
+	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", targetTIDLow, "meta")
 
 	if _, err := os.Stat(srcDir); err != nil {
 		return 0, nil
@@ -1625,9 +1625,6 @@ func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
 		src := filepath.Join(srcDir, name)
 		dst := filepath.Join(dstDir, name)
 		if _, err := os.Stat(src); err != nil {
-			continue
-		}
-		if _, err := os.Stat(dst); err == nil {
 			continue
 		}
 		data, err := os.ReadFile(src)
@@ -1686,7 +1683,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 
 	totalCopied := 0
 
-	n, err := copySysMetaToSave(mlcRoot, menuTID)
+	n, err := copyMenuMetaToSave(mlcRoot, menuTID, menuTID)
 	if err != nil {
 		return totalCopied, fmt.Errorf("failed to copy Wii U Menu meta: %w", err)
 	}
@@ -1699,8 +1696,13 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 
 	_ = os.MkdirAll(filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "80000001"), 0755)
 
-	for _, tidLow := range GetSaveMetaTIDLows(region) {
-		n, err := copySysMetaToSave(mlcRoot, tidLow)
+	n, err = copySysMetaToSave(mlcRoot, miiMakerTID)
+	if err == nil {
+		totalCopied += n
+	}
+
+	for _, tidLow := range []string{GetDailyLogTIDLow(region), GetNotificationsTIDLow(region), "10066000"} {
+		n, err := copyMenuMetaToSave(mlcRoot, menuTID, tidLow)
 		if err != nil {
 			return totalCopied, err
 		}
