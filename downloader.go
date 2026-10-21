@@ -23,7 +23,6 @@ import (
 	"time"
 )
 
-//go:embed titles.json
 var EmbeddedTitlesJSON []byte
 
 var WiiUCommonKey = []byte{
@@ -85,6 +84,17 @@ type TMD struct {
 	Contents     []Content
 	Certificate1 []byte
 	Certificate2 []byte
+}
+
+func IsRawTitle(titleID string) bool {
+	norm := NormalizeTID(titleID)
+	rawTIDs := map[string]bool{
+		"0005001010000100": true,
+		"0005001010000200": true,
+		"0005001010000400": true,
+		"0005001010066000": true,
+	}
+	return rawTIDs[norm]
 }
 
 func NormalizeTID(titleID string) string {
@@ -401,7 +411,6 @@ func ParseTMD(data []byte) (*TMD, error) {
 			}
 		}
 
-		// Positionnement exact apres les blocs de 0x30 octets (ignore les 12 octets de padding SHA-256)
 		_, _ = reader.Seek(int64(certOffset), io.SeekStart)
 		if uint64(len(data)) >= certOffset+0x700 {
 			tmd.Certificate1 = make([]byte, 0x400)
@@ -834,6 +843,33 @@ func verifyExtractedFST(outputDir string, tmd *TMD) error {
 
 func VerifyTitle(titleID, outputDirectory string) error {
 	outputDir := strings.TrimRight(outputDirectory, "/\\")
+
+	if IsRawTitle(titleID) {
+		tmdPath := filepath.Join(outputDir, "title.tmd")
+		tikPath := filepath.Join(outputDir, "title.tik")
+		if _, err := os.Stat(tmdPath); err != nil {
+			return fmt.Errorf("missing title.tmd for raw title %s", titleID)
+		}
+		if _, err := os.Stat(tikPath); err != nil {
+			return fmt.Errorf("missing title.tik for raw title %s", titleID)
+		}
+		tmd, _, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
+		if err != nil {
+			return fmt.Errorf("raw title TMD read failed for %s: %w", titleID, err)
+		}
+		for _, c := range tmd.Contents {
+			decName := fmt.Sprintf("%08x.dec", c.Index)
+			decPath := filepath.Join(outputDir, decName)
+			if _, err := os.Stat(decPath); err != nil {
+				decNameUpper := fmt.Sprintf("%08X.dec", c.Index)
+				if _, errUpper := os.Stat(filepath.Join(outputDir, decNameUpper)); errUpper != nil {
+					return fmt.Errorf("missing decrypted file %s for raw title %s", decName, titleID)
+				}
+			}
+		}
+		return nil
+	}
+
 	tmdPath := filepath.Join(outputDir, "title.tmd")
 	tikPath := filepath.Join(outputDir, "title.tik")
 	certPath := filepath.Join(outputDir, "title.cert")
@@ -1103,17 +1139,42 @@ func extractFileHashed(srcApp, dstPath string, titleBlock cipher.Block, contentI
 	return nil
 }
 
-func DecryptAndExtractTitle(workDir, targetDir string) error {
+func ExtractRawTitle(workDir string, tmd *TMD, titleBlock cipher.Block) error {
+	for _, c := range tmd.Contents {
+		srcApp, err := resolveContentFile(workDir, c.ID, ".app")
+		if err != nil {
+			return err
+		}
+
+		decName := fmt.Sprintf("%08x.dec", c.Index)
+		dstPath := filepath.Join(workDir, decName)
+
+		if err := extractFileStandard(srcApp, dstPath, titleBlock, c.Index, 0, c.Size); err != nil {
+			return fmt.Errorf("failed to decrypt raw content %s: %w", decName, err)
+		}
+	}
+	return nil
+}
+
+func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	workDir = filepath.Clean(strings.TrimRight(workDir, "/\\"))
 	targetDir = filepath.Clean(strings.TrimRight(targetDir, "/\\"))
 
 	tmdPath := filepath.Join(workDir, "title.tmd")
 	tikPath := filepath.Join(workDir, "title.tik")
-	certPath := filepath.Join(workDir, "title.cert")
 
 	tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, "")
 	if err != nil {
 		return err
+	}
+
+	titleBlock, err := aes.NewCipher(titleKey)
+	if err != nil {
+		return err
+	}
+
+	if IsRawTitle(titleID) {
+		return ExtractRawTitle(targetDir, tmd, titleBlock)
 	}
 
 	rawTMD, err := os.ReadFile(tmdPath)
@@ -1124,12 +1185,7 @@ func DecryptAndExtractTitle(workDir, targetDir string) error {
 	if err != nil {
 		return err
 	}
-	rawCert, _ := os.ReadFile(certPath)
-
-	titleBlock, err := aes.NewCipher(titleKey)
-	if err != nil {
-		return err
-	}
+	rawCert, _ := os.ReadFile(filepath.Join(workDir, "title.cert"))
 
 	var c0 *Content
 	for i := range tmd.Contents {
@@ -1245,7 +1301,6 @@ func DecryptAndExtractTitle(workDir, targetDir string) error {
 			}
 			name := string(fstDec[nameStart : nameStart+uint64(nameEnd)])
 
-			// Protection stricte contre le Path Traversal (noms relatifs et sous-arborescences)
 			if !isSafeSingleName(name) {
 				if (eType & 0x01) != 0 && eLen > i+1 && eLen <= totalEntries {
 					i = eLen - 1
@@ -1322,16 +1377,20 @@ func DecryptAndExtractTitle(workDir, targetDir string) error {
 	return nil
 }
 
-func CleanRawNUSFiles(dir string) {
+func CleanRawNUSFiles(dir string, titleID string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
+
+	isRaw := IsRawTitle(titleID)
+
 	for _, e := range entries {
 		if !e.IsDir() {
 			name := strings.ToLower(e.Name())
-			if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") ||
-				name == "title.tmd" || name == "title.tik" || name == "title.cert" {
+			if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") {
+				_ = os.Remove(filepath.Join(dir, e.Name()))
+			} else if !isRaw && (name == "title.tmd" || name == "title.tik" || name == "title.cert") {
 				_ = os.Remove(filepath.Join(dir, e.Name()))
 			}
 		}
@@ -1447,7 +1506,6 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 			return nil
 		}
 
-		// Annule la progression comptabilisee en cas de tentative reessayee
 		if downloadedThisAttempt > 0 && onProgress != nil {
 			onProgress(-downloadedThisAttempt)
 		}
@@ -1572,11 +1630,11 @@ func DownloadAndExtractTitle(
 		return fmt.Errorf("integrity check failed: %w", err)
 	}
 
-	if err := DecryptAndExtractTitle(targetDir, targetDir); err != nil {
+	if err := DecryptAndExtractTitle(targetDir, targetDir, titleID); err != nil {
 		return fmt.Errorf("decryption/extraction failed: %w", err)
 	}
 
-	CleanRawNUSFiles(targetDir)
+	CleanRawNUSFiles(targetDir, titleID)
 
 	if err := VerifyTitle(titleID, targetDir); err != nil {
 		return fmt.Errorf("post-extraction verification failed: %w", err)
