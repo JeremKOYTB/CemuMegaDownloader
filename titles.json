@@ -1,8 +1,20 @@
 {
   "EUR": [
     {
+      "titleID": "0005001010004009",
+      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "000500101000400a",
+      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "00050010100040ff",
+      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010040200",
-      "name": "Wii U Menu"
+      "name": "Wii U Menu (Required for launch Wii U Menu)"
     },
     {
       "titleID": "0005001010041200",
@@ -61,16 +73,88 @@
       "name": "Software/Data Transfer"
     },
     {
+      "titleID": "0005001010066000",
+      "name": "ECO Process"
+    },
+    {
+      "titleID": "0005001b10042300",
+      "name": "memoryclear_exceptions"
+    },
+    {
+      "titleID": "0005001b10042400",
+      "name": "System Fonts"
+    },
+    {
+      "titleID": "0005001b1004f000",
+      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10050000",
+      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10051000",
+      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10052000",
+      "name": "Country/Location & Mii Shared Data"
+    },
+    {
+      "titleID": "0005001b10053000",
+      "name": "NGWord"
+    },
+    {
+      "titleID": "0005001b10054000",
+      "name": "Electronic Manuals Data / Keys & Certs"
+    },
+    {
+      "titleID": "0005001b10056000",
+      "name": "System SSL Certificates & Mii Rendering Resources"
+    },
+    {
+      "titleID": "0005001b10057000",
+      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10058000",
+      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001b10059200",
       "name": "Wii U Electronic Manual"
+    },
+    {
+      "titleID": "0005001b1005c000",
+      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b1005f000",
+      "name": "OS Patch Map & Timezone Data"
+    },
+    {
+      "titleID": "0005001b10063000",
+      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10065000",
+      "name": "System Shared Data"
     },
     {
       "titleID": "0005001b10067200",
       "name": "Caffeine title ID list"
     },
     {
+      "titleID": "0005001b10068000",
+      "name": "Account & eShop Shared Data"
+    },
+    {
       "titleID": "0005001b10069200",
       "name": "pclkey_eur"
+    },
+    {
+      "titleID": "0005001b1006c000",
+      "name": "Internet Browser Shared Data"
     },
     {
       "titleID": "0005003010010209",
@@ -135,8 +219,20 @@
   ],
   "USA": [
     {
+      "titleID": "0005001010004001",
+      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "000500101000400a",
+      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "00050010100040ff",
+      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010040100",
-      "name": "Wii U Menu"
+      "name": "Wii U Menu (Required for launch Wii U Menu)"
     },
     {
       "titleID": "0005001010041100",
@@ -195,28 +291,100 @@
       "name": "Software/Data Transfer"
     },
     {
+      "titleID": "0005001010066000",
+      "name": "ECO Process"
+    },
+    {
+      "titleID": "0005001b10042300",
+      "name": "memoryclear_exceptions"
+    },
+    {
+      "titleID": "0005001b10042400",
+      "name": "System Fonts"
+    },
+    {
+      "titleID": "0005001b1004f000",
+      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10050000",
+      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10051000",
+      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10052000",
+      "name": "Country/Location & Mii Shared Data"
+    },
+    {
+      "titleID": "0005001b10053000",
+      "name": "NGWord"
+    },
+    {
+      "titleID": "0005001b10054000",
+      "name": "Electronic Manuals Data / Keys & Certs"
+    },
+    {
+      "titleID": "0005001b10056000",
+      "name": "System SSL Certificates & Mii Rendering Resources"
+    },
+    {
+      "titleID": "0005001b10057000",
+      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10058000",
+      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001b10059100",
       "name": "Wii U Electronic Manual"
+    },
+    {
+      "titleID": "0005001b1005c000",
+      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b1005f000",
+      "name": "OS Patch Map & Timezone Data"
+    },
+    {
+      "titleID": "0005001b10063000",
+      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10065000",
+      "name": "System Shared Data"
     },
     {
       "titleID": "0005001b10067100",
       "name": "Caffeine title ID list"
     },
     {
+      "titleID": "0005001b10068000",
+      "name": "Account & eShop Shared Data"
+    },
+    {
       "titleID": "0005001b10069100",
       "name": "pclkey_usa"
+    },
+    {
+      "titleID": "0005001b1006c000",
+      "name": "Internet Browser Shared Data"
     },
     {
       "titleID": "0005003010010109",
       "name": "HOME Menu (OSv9)"
     },
     {
-      "titleID": "0005003010011109",
-      "name": "Fatal Error Viewer (OSv9)"
-    },
-    {
       "titleID": "000500301001010a",
       "name": "HOME Menu (OSv10)"
+    },
+    {
+      "titleID": "0005003010011109",
+      "name": "Fatal Error Viewer (OSv9)"
     },
     {
       "titleID": "000500301001110a",
@@ -269,8 +437,20 @@
   ],
   "JPN": [
     {
+      "titleID": "0005001010004000",
+      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "000500101000400a",
+      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "00050010100040ff",
+      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010040000",
-      "name": "Wii U Menu"
+      "name": "Wii U Menu (Required for launch Wii U Menu)"
     },
     {
       "titleID": "0005001010041000",
@@ -329,28 +509,100 @@
       "name": "Software/Data Transfer"
     },
     {
+      "titleID": "0005001010066000",
+      "name": "ECO Process"
+    },
+    {
+      "titleID": "0005001b10042300",
+      "name": "memoryclear_exceptions"
+    },
+    {
+      "titleID": "0005001b10042400",
+      "name": "System Fonts"
+    },
+    {
+      "titleID": "0005001b1004f000",
+      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10050000",
+      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10051000",
+      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10052000",
+      "name": "Country/Location & Mii Shared Data"
+    },
+    {
+      "titleID": "0005001b10053000",
+      "name": "NGWord"
+    },
+    {
+      "titleID": "0005001b10054000",
+      "name": "Electronic Manuals Data / Keys & Certs"
+    },
+    {
+      "titleID": "0005001b10056000",
+      "name": "System SSL Certificates & Mii Rendering Resources"
+    },
+    {
+      "titleID": "0005001b10057000",
+      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10058000",
+      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001b10059000",
       "name": "Wii U Electronic Manual"
+    },
+    {
+      "titleID": "0005001b1005c000",
+      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b1005f000",
+      "name": "OS Patch Map & Timezone Data"
+    },
+    {
+      "titleID": "0005001b10063000",
+      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001b10065000",
+      "name": "System Shared Data"
     },
     {
       "titleID": "0005001b10067000",
       "name": "Caffeine title ID list"
     },
     {
+      "titleID": "0005001b10068000",
+      "name": "Account & eShop Shared Data"
+    },
+    {
       "titleID": "0005001b10069000",
       "name": "pclkey_jpn"
+    },
+    {
+      "titleID": "0005001b1006c000",
+      "name": "Internet Browser Shared Data"
     },
     {
       "titleID": "0005003010010009",
       "name": "HOME Menu (OSv9)"
     },
     {
-      "titleID": "0005003010011009",
-      "name": "Fatal Error Viewer (OSv9)"
-    },
-    {
       "titleID": "000500301001000a",
       "name": "HOME Menu (OSv10)"
+    },
+    {
+      "titleID": "0005003010011009",
+      "name": "Fatal Error Viewer (OSv9)"
     },
     {
       "titleID": "000500301001100a",
@@ -399,84 +651,6 @@
     {
       "titleID": "000500301006d00a",
       "name": "amiibo Settings"
-    }
-  ],
-  "All": [
-    {
-      "titleID": "0005001010066000",
-      "name": "ECO Process"
-    },
-    {
-      "titleID": "0005001b10042300",
-      "name": "memoryclear_exceptions"
-    },
-    {
-      "titleID": "0005001b10042400",
-      "name": "Fonts"
-    },
-    {
-      "titleID": "0005001b1004f000",
-      "name": "SWKBD (Software Keyboard) Data"
-    },
-    {
-      "titleID": "0005001b10050000",
-      "name": "DeviceEula"
-    },
-    {
-      "titleID": "0005001b10051000",
-      "name": "ErrEula"
-    },
-    {
-      "titleID": "0005001b10052000",
-      "name": "Country/Location data"
-    },
-    {
-      "titleID": "0005001b10053000",
-      "name": "NGWord"
-    },
-    {
-      "titleID": "0005001b10054000",
-      "name": "key and cert files"
-    },
-    {
-      "titleID": "0005001b10056000",
-      "name": "Mii rendering resources"
-    },
-    {
-      "titleID": "0005001b10057000",
-      "name": "Boot screen resources"
-    },
-    {
-      "titleID": "0005001b10058000",
-      "name": "Resources for DRMApp"
-    },
-    {
-      "titleID": "0005001b1005c000",
-      "name": "Country and language data for nn_ec.rpl"
-    },
-    {
-      "titleID": "0005001b1005f000",
-      "name": "OS Patch Map"
-    },
-    {
-      "titleID": "0005001b10063000",
-      "name": "wagonu_specification"
-    },
-    {
-      "titleID": "0005001b10065000",
-      "name": "live.dat"
-    },
-    {
-      "titleID": "0005001b10068000",
-      "name": "Title ID list for nn_sl.rpl"
-    },
-    {
-      "titleID": "0005001b1006c000",
-      "name": "trial_list"
-    },
-    {
-      "titleID": "000500301001a10a",
-      "name": "AOC Overlay App"
     }
   ]
 }
