@@ -1,6 +1,26 @@
 {
   "EUR": [
     {
+      "titleID": "0005001010000100",
+      "name": "boot1 (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000200",
+      "name": "DRH firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000400",
+      "name": "Bluetooth firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004000",
+      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004001",
+      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010004009",
       "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
     },
@@ -213,14 +233,38 @@
       "name": "Miiverse Post App"
     },
     {
+      "titleID": "000500301001a10a",
+      "name": "AOC Overlay App (Required for Wii U Menu)"
+    },
+    {
       "titleID": "000500301006d20a",
       "name": "amiibo Settings"
     }
   ],
   "USA": [
     {
+      "titleID": "0005001010000100",
+      "name": "boot1 (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000200",
+      "name": "DRH firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000400",
+      "name": "Bluetooth firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004000",
+      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010004001",
       "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004009",
+      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
     },
     {
       "titleID": "000500101000400a",
@@ -431,14 +475,38 @@
       "name": "Miiverse Post App"
     },
     {
+      "titleID": "000500301001a10a",
+      "name": "AOC Overlay App (Required for Wii U Menu)"
+    },
+    {
       "titleID": "000500301006d10a",
       "name": "amiibo Settings"
     }
   ],
   "JPN": [
     {
+      "titleID": "0005001010000100",
+      "name": "boot1 (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000200",
+      "name": "DRH firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010000400",
+      "name": "Bluetooth firmware (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010004000",
       "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004001",
+      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005001010004009",
+      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
     },
     {
       "titleID": "000500101000400a",
@@ -647,6 +715,10 @@
     {
       "titleID": "000500301001900a",
       "name": "Miiverse Post App"
+    },
+    {
+      "titleID": "000500301001a10a",
+      "name": "AOC Overlay App (Required for Wii U Menu)"
     },
     {
       "titleID": "000500301006d00a",
