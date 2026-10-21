@@ -23,6 +23,7 @@ import (
 	"time"
 )
 
+//go:embed titles.json
 var EmbeddedTitlesJSON []byte
 
 var WiiUCommonKey = []byte{
@@ -92,7 +93,6 @@ func IsRawTitle(titleID string) bool {
 		"0005001010000100": true,
 		"0005001010000200": true,
 		"0005001010000400": true,
-		"0005001010066000": true,
 	}
 	return rawTIDs[norm]
 }
@@ -844,47 +844,12 @@ func verifyExtractedFST(outputDir string, tmd *TMD) error {
 func VerifyTitle(titleID, outputDirectory string) error {
 	outputDir := strings.TrimRight(outputDirectory, "/\\")
 
-	if IsRawTitle(titleID) {
-		tmdPath := filepath.Join(outputDir, "title.tmd")
-		tikPath := filepath.Join(outputDir, "title.tik")
-		if _, err := os.Stat(tmdPath); err != nil {
-			return fmt.Errorf("missing title.tmd for raw title %s", titleID)
-		}
-		if _, err := os.Stat(tikPath); err != nil {
-			return fmt.Errorf("missing title.tik for raw title %s", titleID)
-		}
-		tmd, _, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
-		if err != nil {
-			return fmt.Errorf("raw title TMD read failed for %s: %w", titleID, err)
-		}
-		for _, c := range tmd.Contents {
-			decName := fmt.Sprintf("%08x.dec", c.Index)
-			decPath := filepath.Join(outputDir, decName)
-			if _, err := os.Stat(decPath); err != nil {
-				decNameUpper := fmt.Sprintf("%08X.dec", c.Index)
-				if _, errUpper := os.Stat(filepath.Join(outputDir, decNameUpper)); errUpper != nil {
-					return fmt.Errorf("missing decrypted file %s for raw title %s", decName, titleID)
-				}
-			}
-		}
-		return nil
-	}
-
 	tmdPath := filepath.Join(outputDir, "title.tmd")
 	tikPath := filepath.Join(outputDir, "title.tik")
-	certPath := filepath.Join(outputDir, "title.cert")
 
-	isExtracted := false
 	if _, err := os.Stat(filepath.Join(outputDir, "code", "title.tmd")); err == nil {
 		tmdPath = filepath.Join(outputDir, "code", "title.tmd")
 		tikPath = filepath.Join(outputDir, "code", "title.tik")
-		certPath = filepath.Join(outputDir, "code", "title.cert")
-		isExtracted = true
-	}
-
-	certInfo, err := os.Stat(certPath)
-	if err != nil || certInfo.IsDir() || certInfo.Size() == 0 {
-		return fmt.Errorf("missing or empty title.cert for %s", titleID)
 	}
 
 	tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
@@ -892,34 +857,59 @@ func VerifyTitle(titleID, outputDirectory string) error {
 		return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
 	}
 
-	if isExtracted {
-		if _, err := resolveContentFile(outputDir, tmd.Contents[0].ID, ".app"); err != nil {
-			if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
-				return verifyExtractedFST(outputDir, tmd)
-			}
-			contentDir := filepath.Join(outputDir, "content")
-			for _, c := range tmd.Contents {
-				p, cErr := resolveContentFile(contentDir, c.ID, ".app")
-				if cErr != nil {
-					return cErr
-				}
-				st, sErr := os.Stat(p)
-				if sErr != nil || uint64(st.Size()) != c.Size {
-					return fmt.Errorf("extracted content size mismatch for %s", filepath.Base(p))
-				}
-			}
-			return nil
-		}
-	}
-
 	titleBlock, err := aes.NewCipher(titleKey)
 	if err != nil {
 		return err
 	}
 
+	hasRawApps := true
 	for _, c := range tmd.Contents {
-		if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
-			return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+		if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
+			hasRawApps = false
+			break
+		}
+	}
+
+	if hasRawApps {
+		for _, c := range tmd.Contents {
+			if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+				return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+			}
+		}
+		return nil
+	}
+
+	if IsRawTitle(titleID) {
+		for _, c := range tmd.Contents {
+			decName := fmt.Sprintf("%08x.dec", c.ID)
+			decPath := filepath.Join(outputDir, decName)
+			st, err := os.Stat(decPath)
+			if err != nil || st.Size() == 0 {
+				decNameUpper := fmt.Sprintf("%08X.dec", c.ID)
+				stUpper, errUpper := os.Stat(filepath.Join(outputDir, decNameUpper))
+				if errUpper != nil || stUpper.Size() == 0 {
+					return fmt.Errorf("missing or empty decrypted file %s for raw title %s", decName, titleID)
+				}
+			}
+		}
+		return nil
+	}
+
+	if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
+		return verifyExtractedFST(outputDir, tmd)
+	}
+
+	for _, c := range tmd.Contents {
+		appPath, err := resolveContentFile(outputDir, c.ID, ".app")
+		if err != nil {
+			appPath, err = resolveContentFile(filepath.Join(outputDir, "content"), c.ID, ".app")
+		}
+		if err != nil {
+			return fmt.Errorf("missing content %08X for title %s", c.ID, titleID)
+		}
+		st, err := os.Stat(appPath)
+		if err != nil || st.Size() == 0 {
+			return fmt.Errorf("invalid content file %s for title %s", filepath.Base(appPath), titleID)
 		}
 	}
 
@@ -1146,7 +1136,7 @@ func ExtractRawTitle(workDir string, tmd *TMD, titleBlock cipher.Block) error {
 			return err
 		}
 
-		decName := fmt.Sprintf("%08x.dec", c.Index)
+		decName := fmt.Sprintf("%08x.dec", c.ID)
 		dstPath := filepath.Join(workDir, decName)
 
 		if err := extractFileStandard(srcApp, dstPath, titleBlock, c.Index, 0, c.Size); err != nil {
@@ -1154,6 +1144,23 @@ func ExtractRawTitle(workDir string, tmd *TMD, titleBlock cipher.Block) error {
 		}
 	}
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
@@ -1358,18 +1365,14 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 			}
 		}
 	} else {
-		contentDir := filepath.Join(targetDir, "content")
-		if err := os.MkdirAll(contentDir, 0755); err != nil {
-			return err
-		}
 		for _, c := range tmd.Contents {
 			srcApp, err := resolveContentFile(workDir, c.ID, ".app")
 			if err != nil {
 				return err
 			}
-			dstPath := filepath.Join(contentDir, fmt.Sprintf("%08X.app", c.ID))
-			if err := extractFileStandard(srcApp, dstPath, titleBlock, c.Index, 0, c.Size); err != nil {
-				return err
+			dstPath := filepath.Join(targetDir, fmt.Sprintf("%08X.app", c.ID))
+			if srcApp != dstPath {
+				_ = copyFile(srcApp, dstPath)
 			}
 		}
 	}
@@ -1378,20 +1381,29 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 }
 
 func CleanRawNUSFiles(dir string, titleID string) {
+	fstPath := filepath.Join(dir, "code", "title.fst")
+	hasFST := false
+	if _, err := os.Stat(fstPath); err == nil {
+		hasFST = true
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 
-	isRaw := IsRawTitle(titleID)
-
 	for _, e := range entries {
 		if !e.IsDir() {
 			name := strings.ToLower(e.Name())
-			if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") {
-				_ = os.Remove(filepath.Join(dir, e.Name()))
-			} else if !isRaw && (name == "title.tmd" || name == "title.tik" || name == "title.cert") {
-				_ = os.Remove(filepath.Join(dir, e.Name()))
+			if hasFST {
+				if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") ||
+					name == "title.tmd" || name == "title.tik" || name == "title.cert" {
+					_ = os.Remove(filepath.Join(dir, e.Name()))
+				}
+			} else if IsRawTitle(titleID) {
+				if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") {
+					_ = os.Remove(filepath.Join(dir, e.Name()))
+				}
 			}
 		}
 	}
