@@ -350,7 +350,7 @@ func extractMLCPathFromSettingsXML(xmlPath string) string {
 	return ""
 }
 
-func detectCemuMLCDirectory() string {
+func detectCemuDirectory() (cemuDir string, mlcDir string) {
 	var candidates []string
 	homeDir, _ := os.UserHomeDir()
 
@@ -395,22 +395,22 @@ func detectCemuMLCDirectory() string {
 			mlcCustom := extractMLCPathFromSettingsXML(xmlFile)
 			if mlcCustom != "" {
 				if infoMlc, err := os.Stat(mlcCustom); err == nil && infoMlc.IsDir() {
-					return mlcCustom
+					return c, mlcCustom
 				}
 			}
 			mlcDefault := filepath.Join(c, "mlc01")
 			if infoMlc, err := os.Stat(mlcDefault); err == nil && infoMlc.IsDir() {
-				return mlcDefault
+				return c, mlcDefault
 			}
 		}
 
 		directMlc := filepath.Join(c, "mlc01")
 		if infoMlc, err := os.Stat(directMlc); err == nil && infoMlc.IsDir() {
-			return directMlc
+			return c, directMlc
 		}
 	}
 
-	return ""
+	return "", ""
 }
 
 func resolveMLCDestPath(baseDir, titleID string) string {
@@ -790,7 +790,7 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 	return uniqueMissing, len(uniqueMissing) == 0
 }
 
-func checkAndSetupWiiUMenu(mlcRoot, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool) {
+func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool) {
 	missingTIDs, isValid := validateWiiUMenuMLC(mlcRoot, region)
 
 	if !isValid {
@@ -815,7 +815,7 @@ func checkAndSetupWiiUMenu(mlcRoot, region string, client *http.Client, reader *
 			}
 
 			fmt.Println("\n[Info] Downloading missing required Wii U Menu titles...")
-			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, reader, true)
+			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, true)
 			return
 		}
 
@@ -830,8 +830,11 @@ func checkAndSetupWiiUMenu(mlcRoot, region string, client *http.Client, reader *
 		return
 	}
 
+	if cemuDir == "" {
+		cemuDir = filepath.Dir(mlcRoot)
+	}
+
 	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
-	cemuDir := filepath.Dir(mlcRoot)
 	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
 
 	if err := os.MkdirAll(cafeLibsDir, 0755); err != nil {
@@ -839,17 +842,35 @@ func checkAndSetupWiiUMenu(mlcRoot, region string, client *http.Client, reader *
 		return
 	}
 
-	files := []string{"nn_sl.rpl", "drmapp.rpl"}
-	for _, file := range files {
+	rplFiles := []string{
+		"drmapp.rpl",
+		"nn_sl.rpl",
+		"nsyskbd.rpl",
+		"snd_user.rpl",
+		"snduser2.rpl",
+		"swkbd.rpl",
+		"erreula.rpl",
+		"nn_ec.rpl",
+		"nn_fp.rpl",
+		"nn_olv.rpl",
+		"proc_ui.rpl",
+	}
+
+	copiedCount := 0
+	for _, file := range rplFiles {
 		src := filepath.Join(rplDir, file)
 		dst := filepath.Join(cafeLibsDir, file)
-		if err := copyFile(src, dst); err != nil {
-			fmt.Printf("[Error] Failed to copy %s: %v\n", file, err)
-			return
+		if _, err := os.Stat(src); err == nil {
+			if err := copyFile(src, dst); err != nil {
+				fmt.Printf("[Warning] Failed to copy %s: %v\n", file, err)
+			} else {
+				copiedCount++
+			}
 		}
 	}
 
-	fmt.Println("\n[Info] Wii U Menu files configured in cafeLibs successfully!")
+	fmt.Printf("\n[Info] %d RPL library files copied to cafeLibs successfully!\n", copiedCount)
+	fmt.Printf("[Info] RPL libraries placed in: %s\n", cafeLibsDir)
 	fmt.Println("\nNext steps in Cemu:")
 	fmt.Println("1. Open Cemu and locate 'Wii U Menu' in your game list.")
 	fmt.Println("2. Right-click 'Wii U Menu' and select 'Edit Game Profile'.")
@@ -904,15 +925,17 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 	client := newHTTPClient()
 
 	var targetBaseDir string
+	var cemuDir string
 	cleanInstall := false
 
-	detectedMlc := detectCemuMLCDirectory()
+	detectedCemuDir, detectedMlc := detectCemuDirectory()
 	if detectedMlc != "" {
 		absMlc, _ := filepath.Abs(detectedMlc)
 		fmt.Printf("\n[Cemu Detected] mlc01 directory found at:\n  %s\n", absMlc)
 		if err := checkDirectoryWritable(absMlc); err == nil {
 			if askYesNo(reader, "Do you want to install titles directly into this Cemu folder? [Y/n]: ", true) {
 				targetBaseDir = absMlc
+				cemuDir = detectedCemuDir
 				fmt.Printf("[Info] Destination set to: %s\n", targetBaseDir)
 			}
 		} else {
@@ -956,6 +979,14 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		mlcRoot = filepath.Join(mlcRoot, "mlc01")
 	}
 
+	if cemuDir == "" {
+		if detectedCemuDir != "" {
+			cemuDir = detectedCemuDir
+		} else {
+			cemuDir = filepath.Dir(mlcRoot)
+		}
+	}
+
 	usrDir := filepath.Join(mlcRoot, "usr")
 	if entries, err := os.ReadDir(usrDir); err == nil && len(entries) > 0 {
 		fmt.Printf("\n[Notice] Existing 'usr' directory detected at:\n  %s\n", usrDir)
@@ -986,10 +1017,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, reader, false)
+	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, false)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot string, reader *bufio.Reader, isRetry bool) {
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot, cemuDir string, reader *bufio.Reader, isRetry bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -1090,7 +1121,7 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		checkAndSetupWiiUMenu(mlcRoot, region, client, reader, cleanInstall, isRetry)
+		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry)
 		fmt.Println("\nPress Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(0)
