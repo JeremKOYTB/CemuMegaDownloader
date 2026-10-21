@@ -480,7 +480,6 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 	case "JPN":
 		regionList = append(regionList, cat.JPN...)
 	}
-	regionList = append(regionList, cat.All...)
 
 	seen := make(map[string]struct{})
 	items := make([]TitleItem, 0, len(regionList))
@@ -842,6 +841,13 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 		return
 	}
 
+	// Suppression des anciens RPL en trop s'ils existent dans cafeLibs
+	extraRPLs := []string{"nn_ec.rpl", "nn_fp.rpl", "nn_olv.rpl", "proc_ui.rpl"}
+	for _, extra := range extraRPLs {
+		_ = os.Remove(filepath.Join(cafeLibsDir, extra))
+	}
+
+	// Seuls les RPL nécessaires sont copiés
 	rplFiles := []string{
 		"drmapp.rpl",
 		"nn_sl.rpl",
@@ -850,10 +856,6 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 		"snduser2.rpl",
 		"swkbd.rpl",
 		"erreula.rpl",
-		"nn_ec.rpl",
-		"nn_fp.rpl",
-		"nn_olv.rpl",
-		"proc_ui.rpl",
 	}
 
 	copiedCount := 0
