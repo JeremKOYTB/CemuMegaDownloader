@@ -810,7 +810,7 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 	return uniqueMissing, len(uniqueMissing) == 0
 }
 
-func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool) {
+func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool, cemu2xMode bool) {
 	missingTIDs, isValid := validateWiiUMenuMLC(mlcRoot, region)
 
 	if !isValid {
@@ -835,7 +835,7 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 			}
 
 			fmt.Println("\n[Info] Downloading missing required Wii U Menu titles...")
-			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, true)
+			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, true, cemu2xMode)
 			return
 		}
 
@@ -843,10 +843,9 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 		return
 	}
 
-	fmt.Println()
-	prompt := "All required titles for the Wii U Menu are detected!\nWould you like to configure Cemu 2.0+ to run the Wii U Menu? [Y/n]: "
-	if !askYesNo(reader, prompt, true) {
-		fmt.Println("[Info] Wii U Menu setup skipped. Process finished.")
+	if !cemu2xMode {
+		fmt.Println("\n[Info] Legacy structure mode: skipping Cemu 2.x+ Wii U Menu setup.")
+		fmt.Println("[Info] Process finished.")
 		return
 	}
 
@@ -854,49 +853,51 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 		cemuDir = filepath.Dir(mlcRoot)
 	}
 
-	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
-	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+	fmt.Println("\n[Info] Setting up Cemu 2.x+ Wii U Menu structure...")
 
-	if err := os.MkdirAll(cafeLibsDir, 0755); err != nil {
-		fmt.Printf("[Error] Failed to create cafeLibs directory: %v\n", err)
-		return
+	metaCopied, err := cemumegadownloader.SetupCemu2xSaveData(mlcRoot, region)
+	if err != nil {
+		fmt.Printf("[Error] Failed to set up save data: %v\n", err)
+	} else {
+		fmt.Printf("[Info] Save data initialized: %d meta files copied, Mii database created.\n", metaCopied)
 	}
 
-	extraRPLs := []string{"nn_ec.rpl", "nn_fp.rpl", "nn_olv.rpl", "proc_ui.rpl"}
-	for _, extra := range extraRPLs {
-		_ = os.Remove(filepath.Join(cafeLibsDir, extra))
+	cafeLibsAlreadyPresent := cemumegadownloader.CheckCafeLibsPresent(cemuDir)
+
+	rplCount, err := cemumegadownloader.SetupCafeLibs(mlcRoot, cemuDir)
+	if err != nil {
+		fmt.Printf("[Error] Failed to set up cafeLibs: %v\n", err)
+	} else {
+		cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+		fmt.Printf("[Info] %d RPL library files placed in: %s\n", rplCount, cafeLibsDir)
 	}
 
-	rplFiles := []string{
-		"drmapp.rpl",
-		"nn_sl.rpl",
-		"nsyskbd.rpl",
-		"snd_user.rpl",
-		"snduser2.rpl",
-		"swkbd.rpl",
-		"erreula.rpl",
-	}
-
-	copiedCount := 0
-	for _, file := range rplFiles {
-		src := filepath.Join(rplDir, file)
-		dst := filepath.Join(cafeLibsDir, file)
-		if _, err := os.Stat(src); err == nil {
-			if err := copyFile(src, dst); err != nil {
-				fmt.Printf("[Warning] Failed to copy %s: %v\n", file, err)
-			} else {
-				copiedCount++
-			}
+	warnings := cemumegadownloader.ValidateCemu2xSetup(mlcRoot, cemuDir, region)
+	if len(warnings) > 0 {
+		fmt.Println("\n[Warning] Cemu 2.x+ validation issues:")
+		for _, w := range warnings {
+			fmt.Printf("  - %s\n", w)
 		}
+	} else {
+		fmt.Println("[Info] Cemu 2.x+ structure validation passed.")
 	}
 
-	fmt.Printf("\n[Info] %d RPL library files copied to cafeLibs successfully!\n", copiedCount)
-	fmt.Printf("[Info] RPL libraries placed in: %s\n", cafeLibsDir)
 	fmt.Println("\nNext steps in Cemu:")
 	fmt.Println("1. Open Cemu and locate 'Wii U Menu' in your game list.")
-	fmt.Println("2. Right-click 'Wii U Menu' and select 'Edit Game Profile'.")
-	fmt.Println("3. In the 'General' tab, check 'Load Shared Libraries'.")
-	fmt.Println("4. Launch Wii U Menu directly from Cemu.")
+	if cafeLibsAlreadyPresent {
+		fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and verify")
+		fmt.Println("   that 'Load Shared Libraries' is checked (it should already be).")
+	} else {
+		fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and ensure")
+		fmt.Println("   that 'Load Shared Libraries' is checked in the General tab.")
+	}
+	fmt.Println("3. IMPORTANT: Before launching the Wii U Menu for the first time,")
+	fmt.Println("   launch Mii Maker from Cemu (File -> Load, then browse to:")
+	miiMakerPath := filepath.Join(mlcRoot, "sys", "title", "00050010",
+		cemumegadownloader.GetMiiMakerTIDLow(region), "code", "ffl_app.rpx")
+	fmt.Printf("   %s\n", miiMakerPath)
+	fmt.Println("   Let it fully start, create a Mii if prompted, then close it.")
+	fmt.Println("4. Now launch the Wii U Menu from Cemu.")
 }
 
 func main() {
@@ -1025,6 +1026,22 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		}
 	}
 
+	fmt.Println("\nTarget structure for extracted titles:")
+	fmt.Println("1. Cemu 2.x+ Structure (recommended)")
+	fmt.Println("   Includes save data initialization, cafeLibs setup,")
+	fmt.Println("   Mii database creation, and Wii U Menu readiness.")
+	fmt.Println("2. Cemu Legacy Structure")
+	fmt.Println("   Standard download and extraction only.")
+	fmt.Print("Select structure [1/2] (default: 1): ")
+	structChoice := readLineStdin(reader)
+	cemu2xMode := structChoice != "2"
+
+	if cemu2xMode {
+		fmt.Println("[Info] Cemu 2.x+ structure selected.")
+	} else {
+		fmt.Println("[Info] Cemu Legacy structure selected.")
+	}
+
 	fmt.Printf("\n[Info] Loading MLC title list for region %s...\n", region)
 	availableItems, err := LoadTitlesForRegion(region, targetBaseDir, client)
 	if err != nil {
@@ -1038,10 +1055,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, false)
+	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, false, cemu2xMode)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot, cemuDir string, reader *bufio.Reader, isRetry bool) {
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot, cemuDir string, reader *bufio.Reader, isRetry bool, cemu2xMode bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -1142,7 +1159,7 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry)
+		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry, cemu2xMode)
 		fmt.Println("\nPress Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(0)

@@ -1555,6 +1555,276 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	return nil
 }
 
+func GetMenuTIDLow(region string) string {
+	switch region {
+	case "USA":
+		return "10040100"
+	case "JPN":
+		return "10040000"
+	default:
+		return "10040200"
+	}
+}
+
+func GetMiiMakerTIDLow(region string) string {
+	switch region {
+	case "USA":
+		return "1004a100"
+	case "JPN":
+		return "1004a000"
+	default:
+		return "1004a200"
+	}
+}
+
+func GetDailyLogTIDLow(region string) string {
+	switch region {
+	case "USA":
+		return "1004c100"
+	case "JPN":
+		return "1004c000"
+	default:
+		return "1004c200"
+	}
+}
+
+func GetNotificationsTIDLow(region string) string {
+	switch region {
+	case "USA":
+		return "1004d100"
+	case "JPN":
+		return "1004d000"
+	default:
+		return "1004d200"
+	}
+}
+
+func GetSaveMetaTIDLows(region string) []string {
+	return []string{
+		GetMiiMakerTIDLow(region),
+		GetDailyLogTIDLow(region),
+		GetNotificationsTIDLow(region),
+		"10066000",
+	}
+}
+
+func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
+	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
+	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta")
+
+	if _, err := os.Stat(srcDir); err != nil {
+		return 0, nil
+	}
+
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return 0, err
+	}
+
+	copied := 0
+	for _, name := range []string{"iconTex.tga", "meta.xml"} {
+		src := filepath.Join(srcDir, name)
+		dst := filepath.Join(dstDir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if _, err := os.Stat(dst); err == nil {
+			continue
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return copied, err
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			return copied, err
+		}
+		copied++
+	}
+	return copied, nil
+}
+
+func initMiiDatabaseFiles(dbDir string) error {
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return err
+	}
+
+	writeIfMissing := func(path string, data []byte) error {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		return os.WriteFile(path, data, 0644)
+	}
+
+	fflODB := make([]byte, 276544)
+	copy(fflODB[:4], []byte("FFOC"))
+	if err := writeIfMissing(filepath.Join(dbDir, "FFL_ODB.dat"), fflODB); err != nil {
+		return err
+	}
+	if err := writeIfMissing(filepath.Join(dbDir, "FFL_ODB_OLD.dat"), fflODB); err != nil {
+		return err
+	}
+
+	fflHDB := make([]byte, 44032)
+	if err := writeIfMissing(filepath.Join(dbDir, "FFL_HDB.dat"), fflHDB); err != nil {
+		return err
+	}
+
+	fclDB := make([]byte, 524352)
+	copy(fclDB[:4], []byte("FCDA"))
+	for i := 4; i < len(fclDB); i++ {
+		fclDB[i] = 0xFF
+	}
+	return writeIfMissing(filepath.Join(dbDir, "FCL_DB.dat"), fclDB)
+}
+
+func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
+	menuTID := GetMenuTIDLow(region)
+	miiMakerTID := GetMiiMakerTIDLow(region)
+
+	menuSaveDir := filepath.Join(mlcRoot, "usr", "save", "00050010", menuTID, "user")
+	_ = os.MkdirAll(filepath.Join(menuSaveDir, "common"), 0755)
+	_ = os.MkdirAll(filepath.Join(menuSaveDir, "80000001"), 0755)
+
+	totalCopied := 0
+
+	n, err := copySysMetaToSave(mlcRoot, menuTID)
+	if err != nil {
+		return totalCopied, fmt.Errorf("failed to copy Wii U Menu meta: %w", err)
+	}
+	totalCopied += n
+
+	miiDBDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common", "db")
+	if err := initMiiDatabaseFiles(miiDBDir); err != nil {
+		return totalCopied, fmt.Errorf("failed to initialize Mii database: %w", err)
+	}
+
+	_ = os.MkdirAll(filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "80000001"), 0755)
+
+	for _, tidLow := range GetSaveMetaTIDLows(region) {
+		n, err := copySysMetaToSave(mlcRoot, tidLow)
+		if err != nil {
+			return totalCopied, err
+		}
+		totalCopied += n
+	}
+
+	return totalCopied, nil
+}
+
+func SetupCafeLibs(mlcRoot, cemuDir string) (int, error) {
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+
+	if err := os.MkdirAll(cafeLibsDir, 0755); err != nil {
+		return 0, err
+	}
+
+	for _, extra := range []string{"nn_ec.rpl", "nn_fp.rpl", "nn_olv.rpl", "proc_ui.rpl"} {
+		_ = os.Remove(filepath.Join(cafeLibsDir, extra))
+	}
+
+	rplFiles := []string{
+		"drmapp.rpl", "nn_sl.rpl", "nsyskbd.rpl",
+		"snd_user.rpl", "snduser2.rpl", "swkbd.rpl", "erreula.rpl",
+	}
+
+	count := 0
+	for _, file := range rplFiles {
+		src := filepath.Join(rplDir, file)
+		dst := filepath.Join(cafeLibsDir, file)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			continue
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+func CheckCafeLibsPresent(cemuDir string) bool {
+	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+	required := []string{"drmapp.rpl", "nn_sl.rpl", "erreula.rpl", "snd_user.rpl", "swkbd.rpl"}
+	for _, rpl := range required {
+		if _, err := os.Stat(filepath.Join(cafeLibsDir, rpl)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
+	var warnings []string
+	menuTID := GetMenuTIDLow(region)
+	miiMakerTID := GetMiiMakerTIDLow(region)
+
+	menRpx := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTID, "code", "men.rpx")
+	if _, err := os.Stat(menRpx); err != nil {
+		warnings = append(warnings, "Wii U Menu (men.rpx) not found")
+	}
+
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	for _, rpl := range []string{"nn_sl.rpl", "drmapp.rpl"} {
+		if _, err := os.Stat(filepath.Join(rplDir, rpl)); err != nil {
+			warnings = append(warnings, fmt.Sprintf("Required RPL %s not found in OSv10", rpl))
+		}
+	}
+
+	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+	for _, rpl := range []string{"drmapp.rpl", "nn_sl.rpl", "erreula.rpl", "snd_user.rpl", "swkbd.rpl"} {
+		if _, err := os.Stat(filepath.Join(cafeLibsDir, rpl)); err != nil {
+			warnings = append(warnings, fmt.Sprintf("cafeLibs missing: %s", rpl))
+		}
+	}
+
+	saveDir := filepath.Join(mlcRoot, "usr", "save", "00050010", menuTID, "user")
+	if _, err := os.Stat(saveDir); err != nil {
+		warnings = append(warnings, "Wii U Menu save path not created")
+	}
+
+	miiDBDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common", "db")
+	for _, db := range []string{"FFL_ODB.dat", "FCL_DB.dat"} {
+		if _, err := os.Stat(filepath.Join(miiDBDir, db)); err != nil {
+			warnings = append(warnings, fmt.Sprintf("Mii database file missing: %s", db))
+		}
+	}
+
+	for _, tidLow := range GetSaveMetaTIDLows(region) {
+		srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
+		if _, err := os.Stat(srcDir); err != nil {
+			continue
+		}
+		for _, name := range []string{"iconTex.tga", "meta.xml"} {
+			src := filepath.Join(srcDir, name)
+			if _, err := os.Stat(src); err != nil {
+				continue
+			}
+			dst := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta", name)
+			if _, err := os.Stat(dst); err != nil {
+				warnings = append(warnings, fmt.Sprintf("Save meta missing: %s/%s", tidLow, name))
+			}
+		}
+	}
+
+	sharedTIDs := []string{
+		"1004f000", "10050000", "10051000",
+		"10057000", "10058000", "1005c000", "10063000",
+	}
+	for _, sTID := range sharedTIDs {
+		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
+		if _, err := os.Stat(dir); err != nil {
+			warnings = append(warnings, fmt.Sprintf("Shared data title missing: 0005001b%s", sTID))
+		}
+	}
+
+	return warnings
+}
+
 func CleanRawNUSFiles(dir string, titleID string) {
 	normTID := NormalizeTID(titleID)
 
