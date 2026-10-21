@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -718,6 +719,69 @@ func askYesNo(reader *bufio.Reader, prompt string, defaultYes bool) bool {
 	}
 }
 
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+func checkAndSetupWiiUMenu(mlcRoot string, reader *bufio.Reader) {
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	nnSlPath := filepath.Join(rplDir, "nn_sl.rpl")
+	drmAppPath := filepath.Join(rplDir, "drmapp.rpl")
+
+	if _, err := os.Stat(nnSlPath); err != nil {
+		return
+	}
+	if _, err := os.Stat(drmAppPath); err != nil {
+		return
+	}
+
+	fmt.Println()
+	prompt := "All required titles for the Wii U Menu are detected. Would you like to configure Cemu 2.0+ to run the Wii U Menu? [Y/n]: "
+	if !askYesNo(reader, prompt, true) {
+		return
+	}
+
+	cemuDir := filepath.Dir(mlcRoot)
+	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
+
+	if err := os.MkdirAll(cafeLibsDir, 0755); err != nil {
+		fmt.Printf("[Error] Failed to create cafeLibs directory: %v\n", err)
+		return
+	}
+
+	files := []string{"nn_sl.rpl", "drmapp.rpl"}
+	for _, file := range files {
+		src := filepath.Join(rplDir, file)
+		dst := filepath.Join(cafeLibsDir, file)
+		if err := copyFile(src, dst); err != nil {
+			fmt.Printf("[Error] Failed to copy %s: %v\n", file, err)
+			return
+		}
+	}
+
+	fmt.Println("\n[Info] Wii U Menu files configured in cafeLibs successfully!")
+	fmt.Println("\nNext steps in Cemu:")
+	fmt.Println("1. Open Cemu and locate 'Wii U Menu' in your game list.")
+	fmt.Println("2. Right-click 'Wii U Menu' and select 'Edit Game Profile'.")
+	fmt.Println("3. In the 'General' tab, check 'Load Shared Libraries'.")
+	fmt.Println("4. Launch Wii U Menu directly from Cemu.")
+}
+
 func main() {
 	cleanupVT := enableVirtualTerminal()
 	defer cleanupVT()
@@ -847,10 +911,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall)
+	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, reader)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool) {
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot string, reader *bufio.Reader) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -951,14 +1015,15 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		fmt.Println("Press Enter to exit...")
-		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
+		checkAndSetupWiiUMenu(mlcRoot, reader)
+		fmt.Println("\nPress Enter to exit...")
+		_, _ = reader.ReadBytes('\n')
 		os.Exit(0)
 	} else {
 		fmt.Printf("[Error] Titles failing verification: %v\n", finalMissingOrCorrupt)
 		fmt.Println("[Error] Some titles were not able to be downloaded or verified.")
 		fmt.Println("Press Enter to exit...")
-		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
+		_, _ = reader.ReadBytes('\n')
 		os.Exit(1)
 	}
 }
