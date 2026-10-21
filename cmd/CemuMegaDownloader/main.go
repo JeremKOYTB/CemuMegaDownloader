@@ -446,6 +446,29 @@ func ensureTitlesJSONData(client *http.Client) ([]byte, error) {
 		if data, err := os.ReadFile(p); err == nil && len(data) > 64 {
 			var cat cemumegadownloader.TitlesCatalog
 			if json.Unmarshal(data, &cat) == nil && len(cat.EUR) > 0 && cat.EUR[0].Name != "" && cat.EUR[0].Name != cat.EUR[0].TitleID {
+				needsRewrite := false
+				cleanList := func(list []cemumegadownloader.TitleDefinition) {
+					for i := range list {
+						cleaned := cemumegadownloader.CleanTitleName(list[i].Name)
+						if cleaned != list[i].Name {
+							list[i].Name = cleaned
+							needsRewrite = true
+						}
+					}
+				}
+				cleanList(cat.EUR)
+				cleanList(cat.USA)
+				cleanList(cat.JPN)
+				if len(cat.All) > 0 {
+					cat.All = nil
+					needsRewrite = true
+				}
+				if needsRewrite {
+					if updatedBytes, err := json.MarshalIndent(cat, "", "  "); err == nil {
+						_ = os.WriteFile(p, updatedBytes, 0644)
+						return updatedBytes, nil
+					}
+				}
 				return data, nil
 			}
 		}
@@ -475,6 +498,9 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 	case "JPN":
 		regionList = append(regionList, cat.JPN...)
 	}
+	if len(cat.All) > 0 {
+		regionList = append(regionList, cat.All...)
+	}
 
 	seen := make(map[string]struct{})
 	items := make([]TitleItem, 0, len(regionList))
@@ -486,7 +512,7 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 		}
 		if _, ok := seen[norm]; !ok {
 			seen[norm] = struct{}{}
-			name := entry.Name
+			name := cemumegadownloader.CleanTitleName(entry.Name)
 			if name == "" {
 				name = norm
 			}
@@ -802,7 +828,7 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 			for _, tid := range missingTIDs {
 				reqItems = append(reqItems, TitleItem{
 					TitleID:  tid,
-					Name:     "Required System Title (" + tid + ")",
+					Name:     "System Title " + tid,
 					Path:     resolveMLCDestPath(mlcRoot, tid),
 					Selected: true,
 				})
