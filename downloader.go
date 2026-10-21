@@ -929,19 +929,20 @@ func VerifyTitle(titleID, outputDirectory string) error {
 						return err
 					}
 				}
+				if normTID == "0005001010000400" {
+					if _, errCert := os.Stat(filepath.Join(outputDir, "title.cert")); errCert != nil {
+						decP := filepath.Join(outputDir, "00000000.dec")
+						if st, errDec := os.Stat(decP); errDec != nil || st.Size() == 0 {
+							return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
+						}
+					}
+				}
 				return nil
 			}
 		}
 
 		switch normTID {
 		case "0005001010000100":
-			appP, err := resolveContentFile(outputDir, 0x09, ".app")
-			if err != nil {
-				return err
-			}
-			if st, err := os.Stat(appP); err != nil || st.Size() == 0 {
-				return fmt.Errorf("missing or empty 00000009.app for %s", titleID)
-			}
 			decP := filepath.Join(outputDir, "00000009.dec")
 			if st, err := os.Stat(decP); err != nil || st.Size() == 0 {
 				return fmt.Errorf("missing or empty 00000009.dec for %s", titleID)
@@ -1287,7 +1288,7 @@ func copyFile(src, dst string) error {
 
 func shouldSkipCodeManifests(normTID string) bool {
 	switch normTID {
-	case "0005000e1fbf1000", "0005001010004000", "0005001010004001":
+	case "0005000e1fbf1000", "0005001010000200", "0005001010004000", "0005001010004001":
 		return true
 	default:
 		return false
@@ -1570,7 +1571,11 @@ func CleanRawNUSFiles(dir string, titleID string) {
 			name := strings.ToLower(e.Name())
 			switch normTID {
 			case "0005001010000100":
-				if name == "title.tmd" || name == "title.tik" || name == "title.cert" {
+				if strings.HasSuffix(name, ".app") ||
+					strings.HasSuffix(name, ".h3") ||
+					name == "title.tmd" ||
+					name == "title.tik" ||
+					name == "title.cert" {
 					_ = os.Remove(filepath.Join(dir, e.Name()))
 				}
 			case "0005001010000400":
