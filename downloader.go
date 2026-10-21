@@ -1599,11 +1599,24 @@ func GetNotificationsTIDLow(region string) string {
 	}
 }
 
+func GetSystemSettingsTIDLow(region string) string {
+	switch strings.ToUpper(region) {
+	case "USA":
+		return "10047100"
+	case "JPN":
+		return "10047000"
+	default:
+		return "10047200"
+	}
+}
+
 func GetSaveMetaTIDLows(region string) []string {
 	return []string{
+		GetMenuTIDLow(region),
 		GetMiiMakerTIDLow(region),
 		GetDailyLogTIDLow(region),
 		GetNotificationsTIDLow(region),
+		GetSystemSettingsTIDLow(region),
 		"10066000",
 	}
 }
@@ -1683,22 +1696,69 @@ func getPinnedTitleVersion(normTID string) int {
 		return 178
 	case "0005001010049200":
 		return 103
+	case "0005001b10050000":
+		return 64
+	case "0005001b10059200":
+		return 128
 	}
 	return 0
 }
 
-func initSystemActData(mlcRoot string) error {
-	actDir := filepath.Join(mlcRoot, "usr", "save", "system", "act", "80000001")
-	if err := os.MkdirAll(actDir, 0755); err != nil {
+func initSystemPDMData(mlcRoot string) error {
+	pdmDir := filepath.Join(mlcRoot, "usr", "save", "system", "pdm", "80000001")
+	if err := os.MkdirAll(pdmDir, 0755); err != nil {
 		return err
 	}
-	actFile := filepath.Join(actDir, "account.dat")
+	diaryFile := filepath.Join(pdmDir, "PlayDiary.dat")
+	if _, err := os.Stat(diaryFile); os.IsNotExist(err) {
+		_ = os.WriteFile(diaryFile, make([]byte, 8), 0644)
+	}
+	statsFile := filepath.Join(pdmDir, "PlayStats.dat")
+	if _, err := os.Stat(statsFile); os.IsNotExist(err) {
+		statsData := make([]byte, 5124)
+		statsData[0x3] = 0x02
+		statsData[0x5] = 0x05
+		statsData[0x7] = 0x10
+		statsData[0x8] = 0x10
+		statsData[0x9] = 0x04
+		statsData[0xA] = 0x72
+		statsData[0x11] = 0x01
+		statsData[0x12] = 0x26
+		statsData[0x13] = 0x3E
+		statsData[0x14] = 0x26
+		statsData[0x15] = 0x3E
+		statsData[0x19] = 0x05
+		statsData[0x1B] = 0x10
+		statsData[0x1C] = 0x10
+		statsData[0x1D] = 0x04
+		statsData[0x1E] = 0x02
+		statsData[0x25] = 0x03
+		statsData[0x26] = 0x26
+		statsData[0x27] = 0x3E
+		statsData[0x28] = 0x26
+		statsData[0x29] = 0x3E
+		_ = os.WriteFile(statsFile, statsData, 0644)
+	}
+	return nil
+}
+
+func initSystemActData(mlcRoot string) error {
+	actDir := filepath.Join(mlcRoot, "usr", "save", "system", "act")
+	if err := os.MkdirAll(filepath.Join(actDir, "80000001"), 0755); err != nil {
+		return err
+	}
+	persisFile := filepath.Join(actDir, "persisid.dat")
+	if _, err := os.Stat(persisFile); os.IsNotExist(err) {
+		_ = os.WriteFile(persisFile, []byte("PersistentIdManager_20120607\r\nPersistentIdHead=80000001\r\n\r\n"), 0644)
+	}
+	actFile := filepath.Join(actDir, "80000001", "account.dat")
 	if _, err := os.Stat(actFile); err == nil {
 		return nil
 	}
 	content := "AccountInstance_20120705\r\nPersistentId=80000001\r\nTransferableIdBase=2000004480a321a\r\nUuid=c2d56199dcb71ded5d09ec93480a321a\r\nAccountId=\r\nSimpleAddressId=0\r\nPrincipalId=0\r\nAccountPassword=\r\nParentalControlsPin=\r\n"
 	return os.WriteFile(actFile, []byte(content), 0644)
 }
+
 
 func initMiiStudioSave(commonDir string) error {
 	savePath := filepath.Join(commonDir, "stadio.sav")
@@ -1788,6 +1848,13 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 		}
 		totalCopied += n
 	}
+
+	n, err = copySysMetaToSave(mlcRoot, GetSystemSettingsTIDLow(region))
+	if err == nil {
+		totalCopied += n
+	}
+
+	_ = initSystemPDMData(mlcRoot)
 
 	return totalCopied, nil
 }
