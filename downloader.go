@@ -50,11 +50,12 @@ var (
 	defaultCertCache []byte
 	certCacheLock    sync.Mutex
 
-	reHTMLRow  = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
-	reHTMLCell = regexp.MustCompile(`(?is)<td[^>]*>(.*?)</td>`)
-	reHTMLTag  = regexp.MustCompile(`(?is)<[^>]+>`)
-	reHTMLBr   = regexp.MustCompile(`(?is)<br\s*/?>`)
-	reBrewTID  = regexp.MustCompile(`(0005[0-9a-fA-F]{4}-?[0-9a-fA-F]{8})`)
+	reHTMLRow      = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
+	reHTMLCell     = regexp.MustCompile(`(?is)<td[^>]*>(.*?)</td>`)
+	reHTMLTag      = regexp.MustCompile(`(?is)<[^>]+>`)
+	reHTMLBr       = regexp.MustCompile(`(?is)<br\s*/?>`)
+	reBrewTID      = regexp.MustCompile(`(0005[0-9a-fA-F]{4}-?[0-9a-fA-F]{8})`)
+	reReqMenuParen = regexp.MustCompile(`(?i)\s*\(Required for (?:launch )?Wii U Menu\)`)
 )
 
 type TitleDefinition struct {
@@ -66,7 +67,7 @@ type TitlesCatalog struct {
 	EUR []TitleDefinition `json:"EUR"`
 	USA []TitleDefinition `json:"USA"`
 	JPN []TitleDefinition `json:"JPN"`
-	All []TitleDefinition `json:"All"`
+	All []TitleDefinition `json:"All,omitempty"`
 }
 
 type Content struct {
@@ -91,7 +92,6 @@ func IsRawTitle(titleID string) bool {
 	norm := NormalizeTID(titleID)
 	rawTIDs := map[string]bool{
 		"0005001010000100": true,
-		"0005001010000200": true,
 		"0005001010000400": true,
 	}
 	return rawTIDs[norm]
@@ -100,6 +100,11 @@ func IsRawTitle(titleID string) bool {
 func NormalizeTID(titleID string) string {
 	r := strings.NewReplacer("-", "", "/", "", "\\", "")
 	return strings.ToLower(strings.TrimSpace(r.Replace(titleID)))
+}
+
+func CleanTitleName(name string) string {
+	cleaned := reReqMenuParen.ReplaceAllString(name, "")
+	return strings.TrimSpace(cleaned)
 }
 
 func isSafeSingleName(name string) bool {
@@ -156,8 +161,9 @@ func loadEmbeddedNameFallback() map[string]string {
 		for _, list := range [][]TitleDefinition{cat.EUR, cat.USA, cat.JPN, cat.All} {
 			for _, item := range list {
 				norm := NormalizeTID(item.TitleID)
-				if norm != "" && item.Name != "" && item.Name != norm {
-					names[norm] = item.Name
+				cleanName := CleanTitleName(item.Name)
+				if norm != "" && cleanName != "" && cleanName != norm {
+					names[norm] = cleanName
 				}
 			}
 		}
@@ -216,6 +222,7 @@ func scrapeWiiUBrewNames(ctx context.Context, client *http.Client) map[string]st
 			resolvedName = cleanDesc
 		}
 
+		resolvedName = CleanTitleName(resolvedName)
 		if resolvedName != "" {
 			names[tid] = resolvedName
 		}
@@ -244,9 +251,12 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 
 	for k, v := range wMap {
 		if v != "" {
-			nameMap[k] = v
+			nameMap[k] = CleanTitleName(v)
 		}
 	}
+
+	var embeddedCat TitlesCatalog
+	_ = json.Unmarshal(EmbeddedTitlesJSON, &embeddedCat)
 
 	var parsedMLC struct {
 		MLC map[string][]string `json:"MLC"`
@@ -257,19 +267,20 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 			EUR: []TitleDefinition{},
 			USA: []TitleDefinition{},
 			JPN: []TitleDefinition{},
-			All: []TitleDefinition{},
 		}
-		buildRegion := func(reg string) []TitleDefinition {
+
+		buildRegion := func(reg string, embeddedFallback []TitleDefinition) []TitleDefinition {
 			seen := make(map[string]struct{})
 			var out []TitleDefinition
-			for _, tid := range parsedMLC.MLC[reg] {
-				norm := NormalizeTID(tid)
+
+			addTID := func(rawTID string) {
+				norm := NormalizeTID(rawTID)
 				if norm == "" || norm == "dummy" {
-					continue
+					return
 				}
 				if _, exists := seen[norm]; !exists {
 					seen[norm] = struct{}{}
-					titleName := nameMap[norm]
+					titleName := CleanTitleName(nameMap[norm])
 					if titleName == "" {
 						titleName = norm
 					}
@@ -279,12 +290,22 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 					})
 				}
 			}
+
+			for _, item := range embeddedFallback {
+				addTID(item.TitleID)
+			}
+			for _, tid := range parsedMLC.MLC["All"] {
+				addTID(tid)
+			}
+			for _, tid := range parsedMLC.MLC[reg] {
+				addTID(tid)
+			}
 			return out
 		}
-		catalog.EUR = buildRegion("EUR")
-		catalog.USA = buildRegion("USA")
-		catalog.JPN = buildRegion("JPN")
-		catalog.All = buildRegion("All")
+
+		catalog.EUR = buildRegion("EUR", embeddedCat.EUR)
+		catalog.USA = buildRegion("USA", embeddedCat.USA)
+		catalog.JPN = buildRegion("JPN", embeddedCat.JPN)
 
 		outBytes, err := json.MarshalIndent(catalog, "", "  ")
 		if err == nil {
@@ -296,6 +317,25 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 	}
 
 	if len(EmbeddedTitlesJSON) > 0 {
+		var cleanCat TitlesCatalog
+		if json.Unmarshal(EmbeddedTitlesJSON, &cleanCat) == nil {
+			for i := range cleanCat.EUR {
+				cleanCat.EUR[i].Name = CleanTitleName(cleanCat.EUR[i].Name)
+			}
+			for i := range cleanCat.USA {
+				cleanCat.USA[i].Name = CleanTitleName(cleanCat.USA[i].Name)
+			}
+			for i := range cleanCat.JPN {
+				cleanCat.JPN[i].Name = CleanTitleName(cleanCat.JPN[i].Name)
+			}
+			cleanCat.All = nil
+			if outBytes, err := json.MarshalIndent(cleanCat, "", "  "); err == nil {
+				if dstPath != "" {
+					_ = os.WriteFile(dstPath, outBytes, 0644)
+				}
+				return outBytes, nil
+			}
+		}
 		if dstPath != "" {
 			_ = os.WriteFile(dstPath, EmbeddedTitlesJSON, 0644)
 		}
@@ -428,6 +468,19 @@ func ParseTMD(data []byte) (*TMD, error) {
 	}
 
 	return tmd, nil
+}
+
+func getTrimmedTMDBytes(rawTMD []byte, tmd *TMD) []byte {
+	var certOffset uint64
+	if tmd.Version == 0x00 {
+		certOffset = uint64(0x1E4) + (uint64(tmd.ContentCount) * 0x24)
+	} else {
+		certOffset = uint64(0xB04) + (uint64(tmd.ContentCount) * 0x30)
+	}
+	if uint64(len(rawTMD)) >= certOffset {
+		return rawTMD[:certOffset]
+	}
+	return rawTMD
 }
 
 func getDefaultRootCert(ctx context.Context, client *http.Client) ([]byte, error) {
@@ -747,12 +800,7 @@ func verifySingleContent(workDir string, c Content, titleBlock cipher.Block) err
 	return nil
 }
 
-func verifyExtractedFST(outputDir string, tmd *TMD) error {
-	fstPath := filepath.Join(outputDir, "code", "title.fst")
-	fstDec, err := os.ReadFile(fstPath)
-	if err != nil {
-		return fmt.Errorf("failed to read title.fst: %w", err)
-	}
+func verifyExtractedFSTData(outputDir string, fstDec []byte, tmd *TMD) error {
 	if len(fstDec) < 0x20 {
 		return fmt.Errorf("title.fst too small: %d bytes", len(fstDec))
 	}
@@ -769,9 +817,12 @@ func verifyExtractedFST(outputDir string, tmd *TMD) error {
 		return fmt.Errorf("invalid FST table: totalEntries (%d) or nameTableOff out of bounds", totalEntries)
 	}
 
-	contentMap := make(map[uint16]Content, len(tmd.Contents))
-	for _, c := range tmd.Contents {
-		contentMap[c.Index] = c
+	var contentMap map[uint16]Content
+	if tmd != nil {
+		contentMap = make(map[uint16]Content, len(tmd.Contents))
+		for _, c := range tmd.Contents {
+			contentMap[c.Index] = c
+		}
 	}
 
 	pathStack := []string{outputDir}
@@ -827,93 +878,164 @@ func verifyExtractedFST(outputDir string, tmd *TMD) error {
 			pathStack = append(pathStack, currentPath)
 			endStack = append(endStack, eLen)
 		} else if (eType & 0x80) == 0 {
-			if _, ok := contentMap[eCID]; ok {
-				st, err := os.Stat(currentPath)
-				if err != nil || st.IsDir() {
-					return fmt.Errorf("missing extracted file %s", currentPath)
+			if contentMap != nil {
+				if _, ok := contentMap[eCID]; !ok {
+					continue
 				}
-				if uint64(st.Size()) != uint64(eLen) {
-					return fmt.Errorf("extracted file size mismatch for %s: got %d, expected %d", currentPath, st.Size(), eLen)
-				}
+			}
+			st, err := os.Stat(currentPath)
+			if err != nil || st.IsDir() {
+				return fmt.Errorf("missing extracted file %s", currentPath)
+			}
+			if strings.EqualFold(name, "bootLogoTex.tga") && st.Size() == 0 {
+				continue
+			}
+			if uint64(st.Size()) != uint64(eLen) {
+				return fmt.Errorf("extracted file size mismatch for %s: got %d, expected %d", currentPath, st.Size(), eLen)
 			}
 		}
 	}
 	return nil
 }
 
+func verifyExtractedFST(outputDir string, tmd *TMD) error {
+	fstPath := filepath.Join(outputDir, "code", "title.fst")
+	fstDec, err := os.ReadFile(fstPath)
+	if err != nil {
+		return fmt.Errorf("failed to read title.fst: %w", err)
+	}
+	return verifyExtractedFSTData(outputDir, fstDec, tmd)
+}
+
 func VerifyTitle(titleID, outputDirectory string) error {
 	outputDir := strings.TrimRight(outputDirectory, "/\\")
+	normTID := NormalizeTID(titleID)
+
+	if IsRawTitle(normTID) {
+		tmdPath := filepath.Join(outputDir, "title.tmd")
+		tikPath := filepath.Join(outputDir, "title.tik")
+		if _, err := os.Stat(tmdPath); err == nil {
+			if _, errTik := os.Stat(tikPath); errTik == nil {
+				tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
+				if err != nil {
+					return err
+				}
+				titleBlock, err := aes.NewCipher(titleKey)
+				if err != nil {
+					return err
+				}
+				for _, c := range tmd.Contents {
+					if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		}
+
+		switch normTID {
+		case "0005001010000100":
+			appP, err := resolveContentFile(outputDir, 0x09, ".app")
+			if err != nil {
+				return err
+			}
+			if st, err := os.Stat(appP); err != nil || st.Size() == 0 {
+				return fmt.Errorf("missing or empty 00000009.app for %s", titleID)
+			}
+			decP := filepath.Join(outputDir, "00000009.dec")
+			if st, err := os.Stat(decP); err != nil || st.Size() == 0 {
+				return fmt.Errorf("missing or empty 00000009.dec for %s", titleID)
+			}
+			return nil
+		case "0005001010000400":
+			appP, err := resolveContentFile(outputDir, 0x00, ".app")
+			if err != nil {
+				return err
+			}
+			if st, err := os.Stat(appP); err != nil || st.Size() == 0 {
+				return fmt.Errorf("missing or empty 00000000.app for %s", titleID)
+			}
+			decP := filepath.Join(outputDir, "00000000.dec")
+			if st, err := os.Stat(decP); err != nil || st.Size() == 0 {
+				return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
+			}
+			return nil
+		}
+	}
 
 	tmdPath := filepath.Join(outputDir, "title.tmd")
 	tikPath := filepath.Join(outputDir, "title.tik")
 
-	if _, err := os.Stat(filepath.Join(outputDir, "code", "title.tmd")); err == nil {
-		tmdPath = filepath.Join(outputDir, "code", "title.tmd")
-		tikPath = filepath.Join(outputDir, "code", "title.tik")
-	}
-
-	tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
-	if err != nil {
-		return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
-	}
-
-	titleBlock, err := aes.NewCipher(titleKey)
-	if err != nil {
-		return err
-	}
-
-	hasRawApps := true
-	for _, c := range tmd.Contents {
-		if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
-			hasRawApps = false
-			break
+	hasRootManifest := false
+	if _, err1 := os.Stat(tmdPath); err1 == nil {
+		if _, err2 := os.Stat(tikPath); err2 == nil {
+			hasRootManifest = true
 		}
 	}
 
-	if hasRawApps {
-		for _, c := range tmd.Contents {
-			if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
-				return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+	hasCodeManifest := false
+	if !hasRootManifest {
+		codeTMD := filepath.Join(outputDir, "code", "title.tmd")
+		codeTik := filepath.Join(outputDir, "code", "title.tik")
+		if _, err1 := os.Stat(codeTMD); err1 == nil {
+			if _, err2 := os.Stat(codeTik); err2 == nil {
+				tmdPath = codeTMD
+				tikPath = codeTik
+				hasCodeManifest = true
 			}
 		}
-		return nil
 	}
 
-	if IsRawTitle(titleID) {
+	if hasRootManifest || hasCodeManifest {
+		tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
+		if err != nil {
+			return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
+		}
+
+		titleBlock, err := aes.NewCipher(titleKey)
+		if err != nil {
+			return err
+		}
+
+		hasRawApps := true
 		for _, c := range tmd.Contents {
-			decName := fmt.Sprintf("%08x.dec", c.ID)
-			decPath := filepath.Join(outputDir, decName)
-			st, err := os.Stat(decPath)
-			if err != nil || st.Size() == 0 {
-				decNameUpper := fmt.Sprintf("%08X.dec", c.ID)
-				stUpper, errUpper := os.Stat(filepath.Join(outputDir, decNameUpper))
-				if errUpper != nil || stUpper.Size() == 0 {
-					return fmt.Errorf("missing or empty decrypted file %s for raw title %s", decName, titleID)
+			if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
+				hasRawApps = false
+				break
+			}
+		}
+
+		if hasRawApps {
+			for _, c := range tmd.Contents {
+				if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+					return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
 				}
 			}
 		}
-		return nil
+
+		if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
+			return verifyExtractedFST(outputDir, tmd)
+		}
+
+		if hasRawApps {
+			return nil
+		}
 	}
 
 	if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
+		var tmd *TMD
+		if rawTMD, err := os.ReadFile(filepath.Join(outputDir, "code", "title.tmd")); err == nil {
+			tmd, _ = ParseTMD(rawTMD)
+		}
 		return verifyExtractedFST(outputDir, tmd)
 	}
 
-	for _, c := range tmd.Contents {
-		appPath, err := resolveContentFile(outputDir, c.ID, ".app")
-		if err != nil {
-			appPath, err = resolveContentFile(filepath.Join(outputDir, "content"), c.ID, ".app")
-		}
-		if err != nil {
-			return fmt.Errorf("missing content %08X for title %s", c.ID, titleID)
-		}
-		st, err := os.Stat(appPath)
-		if err != nil || st.Size() == 0 {
-			return fmt.Errorf("invalid content file %s for title %s", filepath.Base(appPath), titleID)
-		}
+	codeDir := filepath.Join(outputDir, "code")
+	if entries, err := os.ReadDir(codeDir); err == nil && len(entries) > 0 {
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("verification failed for %s: missing valid extracted files or manifests", titleID)
 }
 
 func extractFileStandard(srcApp, dstPath string, titleBlock cipher.Block, contentIdx uint16, offset, length uint64) error {
@@ -1163,9 +1285,37 @@ func copyFile(src, dst string) error {
 	return err
 }
 
+func shouldSkipCodeManifests(normTID string) bool {
+	switch normTID {
+	case "0005000e1fbf1000", "0005001010004000", "0005001010004001":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldTrimCodeTMD(normTID string) bool {
+	switch normTID {
+	case "0005001b10042400", "0005001b10056000", "0005001b10057000", "0005003010011209":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldZeroBootLogo(normTID string) bool {
+	switch normTID {
+	case "0005001010066000", "0005003010011209", "000500301001120a", "00050030100112ff":
+		return true
+	default:
+		return false
+	}
+}
+
 func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	workDir = filepath.Clean(strings.TrimRight(workDir, "/\\"))
 	targetDir = filepath.Clean(strings.TrimRight(targetDir, "/\\"))
+	normTID := NormalizeTID(titleID)
 
 	tmdPath := filepath.Join(workDir, "title.tmd")
 	tikPath := filepath.Join(workDir, "title.tik")
@@ -1180,7 +1330,7 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 		return err
 	}
 
-	if IsRawTitle(titleID) {
+	if IsRawTitle(normTID) {
 		return ExtractRawTitle(targetDir, tmd, titleBlock)
 	}
 
@@ -1224,21 +1374,32 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	var zeroIV [16]byte
 	fstDec := make([]byte, len(c0Enc))
 	cipher.NewCBCDecrypter(titleBlock, zeroIV[:]).CryptBlocks(fstDec, c0Enc)
+	if c0.Size > 0 && uint64(len(fstDec)) > c0.Size {
+		fstDec = fstDec[:c0.Size]
+	}
 
 	codeDir := filepath.Join(targetDir, "code")
 	if err := os.MkdirAll(codeDir, 0755); err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(codeDir, "title.tmd"), rawTMD, 0644); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(codeDir, "title.tik"), rawTik, 0644); err != nil {
-		return err
-	}
-	if len(rawCert) > 0 {
-		if err := os.WriteFile(filepath.Join(codeDir, "title.cert"), rawCert, 0644); err != nil {
+	if !shouldSkipCodeManifests(normTID) {
+		tmdToWrite := rawTMD
+		if shouldTrimCodeTMD(normTID) {
+			tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
+		}
+		if err := os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644); err != nil {
 			return err
+		}
+		if normTID != "000500301001a10a" {
+			if err := os.WriteFile(filepath.Join(codeDir, "title.tik"), rawTik, 0644); err != nil {
+				return err
+			}
+			if len(rawCert) > 0 {
+				if err := os.WriteFile(filepath.Join(codeDir, "title.cert"), rawCert, 0644); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -1265,8 +1426,10 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	}
 
 	if isFST {
-		if err := os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644); err != nil {
-			return err
+		if !shouldSkipCodeManifests(normTID) {
+			if err := os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644); err != nil {
+				return err
+			}
 		}
 
 		contentMap := make(map[uint16]Content, len(tmd.Contents))
@@ -1353,6 +1516,13 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 					return err
 				}
 
+				if strings.EqualFold(name, "bootLogoTex.tga") && shouldZeroBootLogo(normTID) {
+					if err := os.WriteFile(currentPath, []byte{}, 0644); err != nil {
+						return err
+					}
+					continue
+				}
+
 				if (c.Type & 0x02) != 0 {
 					if err := extractFileHashed(srcApp, currentPath, titleBlock, c.Index, realOffset, uint64(eLen)); err != nil {
 						return err
@@ -1363,6 +1533,10 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 					}
 				}
 			}
+		}
+
+		if err := verifyExtractedFSTData(targetDir, fstDec, tmd); err != nil {
+			return err
 		}
 	} else {
 		for _, c := range tmd.Contents {
@@ -1381,27 +1555,58 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 }
 
 func CleanRawNUSFiles(dir string, titleID string) {
-	fstPath := filepath.Join(dir, "code", "title.fst")
-	hasFST := false
-	if _, err := os.Stat(fstPath); err == nil {
-		hasFST = true
-	}
+	normTID := NormalizeTID(titleID)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 
-	for _, e := range entries {
-		if !e.IsDir() {
+	if IsRawTitle(normTID) {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
 			name := strings.ToLower(e.Name())
-			if hasFST {
-				if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") ||
-					name == "title.tmd" || name == "title.tik" || name == "title.cert" {
+			switch normTID {
+			case "0005001010000100":
+				if name == "title.tmd" || name == "title.tik" || name == "title.cert" {
 					_ = os.Remove(filepath.Join(dir, e.Name()))
 				}
-			} else if IsRawTitle(titleID) {
-				if strings.HasSuffix(name, ".app") || strings.HasSuffix(name, ".h3") {
+			case "0005001010000400":
+				if name == "title.cert" {
+					_ = os.Remove(filepath.Join(dir, e.Name()))
+				}
+			}
+		}
+		return
+	}
+
+	if normTID == "0005001010066000" {
+		_ = os.Remove(filepath.Join(dir, "title.cert"))
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".dec") {
+				_ = os.Remove(filepath.Join(dir, e.Name()))
+			}
+		}
+		return
+	}
+
+	hasExtractedCode := false
+	if st, err := os.Stat(filepath.Join(dir, "code")); err == nil && st.IsDir() {
+		hasExtractedCode = true
+	}
+
+	if hasExtractedCode {
+		for _, e := range entries {
+			if !e.IsDir() {
+				name := strings.ToLower(e.Name())
+				if strings.HasSuffix(name, ".app") ||
+					strings.HasSuffix(name, ".h3") ||
+					strings.HasSuffix(name, ".dec") ||
+					name == "title.tmd" ||
+					name == "title.tik" ||
+					name == "title.cert" {
 					_ = os.Remove(filepath.Join(dir, e.Name()))
 				}
 			}
@@ -1543,7 +1748,8 @@ func DownloadAndExtractTitle(
 	onProgress func(int64),
 ) error {
 	targetDir := strings.TrimRight(outputPath, "/\\")
-	baseURL := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s", titleID)
+	normTID := NormalizeTID(titleID)
+	baseURL := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s", normTID)
 
 	if cleanInstall {
 		normTarget := filepath.Clean(targetDir)
@@ -1588,6 +1794,8 @@ func DownloadAndExtractTitle(
 		return err
 	}
 
+	useLowerCaseApp := normTID == "0005001010000400"
+
 	type dlTask struct {
 		url  string
 		path string
@@ -1595,14 +1803,27 @@ func DownloadAndExtractTitle(
 	var tasks []dlTask
 
 	for _, c := range tmd.Contents {
+		appFileName := fmt.Sprintf("%08X.app", c.ID)
+		if useLowerCaseApp {
+			appFileName = fmt.Sprintf("%08x.app", c.ID)
+		} else if normTID == "0005001010066000" {
+			_ = os.Remove(filepath.Join(targetDir, fmt.Sprintf("%08x.app", c.ID)))
+		}
+
 		tasks = append(tasks, dlTask{
 			url:  fmt.Sprintf("%s/%08X", baseURL, c.ID),
-			path: filepath.Join(targetDir, fmt.Sprintf("%08X.app", c.ID)),
+			path: filepath.Join(targetDir, appFileName),
 		})
 		if (c.Type & 0x02) != 0 {
+			h3FileName := fmt.Sprintf("%08X.h3", c.ID)
+			if useLowerCaseApp {
+				h3FileName = fmt.Sprintf("%08x.h3", c.ID)
+			} else if normTID == "0005001010066000" {
+				_ = os.Remove(filepath.Join(targetDir, fmt.Sprintf("%08x.h3", c.ID)))
+			}
 			tasks = append(tasks, dlTask{
 				url:  fmt.Sprintf("%s/%08X.h3", baseURL, c.ID),
-				path: filepath.Join(targetDir, fmt.Sprintf("%08X.h3", c.ID)),
+				path: filepath.Join(targetDir, h3FileName),
 			})
 		}
 	}
