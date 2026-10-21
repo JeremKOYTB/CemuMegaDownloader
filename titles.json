@@ -2,43 +2,43 @@
   "EUR": [
     {
       "titleID": "0005001010000100",
-      "name": "boot1 (Required for Wii U Menu)"
+      "name": "boot1"
     },
     {
       "titleID": "0005001010000200",
-      "name": "DRH firmware (Required for Wii U Menu)"
+      "name": "DRH firmware"
     },
     {
       "titleID": "0005000e1fbf1000",
-      "name": "DRC System Applet (Required for Wii U Menu)"
+      "name": "DRC System Applet"
     },
     {
       "titleID": "0005001010000400",
-      "name": "Bluetooth firmware (Required for Wii U Menu)"
+      "name": "Bluetooth firmware"
     },
     {
       "titleID": "0005001010004000",
-      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v0) (SLC)"
     },
     {
       "titleID": "0005001010004001",
-      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v1) (SLC)"
     },
     {
       "titleID": "0005001010004009",
-      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v9) (SLC)"
     },
     {
       "titleID": "000500101000400a",
-      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v10) (SLC)"
     },
     {
       "titleID": "00050010100040ff",
-      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v255) (SLC)"
     },
     {
       "titleID": "0005001010040200",
-      "name": "Wii U Menu (Required for launch Wii U Menu)"
+      "name": "Wii U Menu"
     },
     {
       "titleID": "0005001010041200",
@@ -110,15 +110,15 @@
     },
     {
       "titleID": "0005001b1004f000",
-      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+      "name": "Software Keyboard Data (swkbd)"
     },
     {
       "titleID": "0005001b10050000",
-      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+      "name": "DeviceEula & System Fonts"
     },
     {
       "titleID": "0005001b10051000",
-      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+      "name": "Error System Applet Data (erreula)"
     },
     {
       "titleID": "0005001b10052000",
@@ -138,11 +138,11 @@
     },
     {
       "titleID": "0005001b10057000",
-      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+      "name": "System Sound Assets & Boot Screen Resources"
     },
     {
       "titleID": "0005001b10058000",
-      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+      "name": "DRM Applet Data (drmapp)"
     },
     {
       "titleID": "0005001b10059200",
@@ -150,7 +150,7 @@
     },
     {
       "titleID": "0005001b1005c000",
-      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+      "name": "Country and language data for nn_ec.rpl"
     },
     {
       "titleID": "0005001b1005f000",
@@ -158,7 +158,7 @@
     },
     {
       "titleID": "0005001b10063000",
-      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+      "name": "Wii U Menu Shared Assets"
     },
     {
       "titleID": "0005001b10065000",
@@ -238,7 +238,7 @@
     },
     {
       "titleID": "000500301001a10a",
-      "name": "AOC Overlay App (Required for Wii U Menu)"
+      "name": "AOC Overlay App"
     },
     {
       "titleID": "000500301006d20a",
@@ -248,43 +248,43 @@
   "USA": [
     {
       "titleID": "0005001010000100",
-      "name": "boot1 (Required for Wii U Menu)"
+      "name": "boot1"
     },
     {
       "titleID": "0005001010000200",
-      "name": "DRH firmware (Required for Wii U Menu)"
+      "name": "DRH firmware"
     },
     {
       "titleID": "0005000e1fbf1000",
-      "name": "DRC System Applet (Required for Wii U Menu)"
+      "name": "DRC System Applet"
     },
     {
       "titleID": "0005001010000400",
-      "name": "Bluetooth firmware (Required for Wii U Menu)"
+      "name": "Bluetooth firmware"
     },
     {
       "titleID": "0005001010004000",
-      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v0) (SLC)"
     },
     {
       "titleID": "0005001010004001",
-      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v1) (SLC)"
     },
     {
       "titleID": "0005001010004009",
-      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v9) (SLC)"
     },
     {
       "titleID": "000500101000400a",
-      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v10) (SLC)"
     },
     {
       "titleID": "00050010100040ff",
-      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v255) (SLC)"
     },
     {
       "titleID": "0005001010040100",
-      "name": "Wii U Menu (Required for launch Wii U Menu)"
+      "name": "Wii U Menu"
     },
     {
       "titleID": "0005001010041100",
@@ -356,15 +356,15 @@
     },
     {
       "titleID": "0005001b1004f000",
-      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+      "name": "Software Keyboard Data (swkbd)"
     },
     {
       "titleID": "0005001b10050000",
-      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+      "name": "DeviceEula & System Fonts"
     },
     {
       "titleID": "0005001b10051000",
-      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+      "name": "Error System Applet Data (erreula)"
     },
     {
       "titleID": "0005001b10052000",
@@ -384,11 +384,11 @@
     },
     {
       "titleID": "0005001b10057000",
-      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+      "name": "System Sound Assets & Boot Screen Resources"
     },
     {
       "titleID": "0005001b10058000",
-      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+      "name": "DRM Applet Data (drmapp)"
     },
     {
       "titleID": "0005001b10059100",
@@ -396,7 +396,7 @@
     },
     {
       "titleID": "0005001b1005c000",
-      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+      "name": "Country and language data for nn_ec.rpl"
     },
     {
       "titleID": "0005001b1005f000",
@@ -404,7 +404,7 @@
     },
     {
       "titleID": "0005001b10063000",
-      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+      "name": "Wii U Menu Shared Assets"
     },
     {
       "titleID": "0005001b10065000",
@@ -484,7 +484,7 @@
     },
     {
       "titleID": "000500301001a10a",
-      "name": "AOC Overlay App (Required for Wii U Menu)"
+      "name": "AOC Overlay App"
     },
     {
       "titleID": "000500301006d10a",
@@ -494,43 +494,43 @@
   "JPN": [
     {
       "titleID": "0005001010000100",
-      "name": "boot1 (Required for Wii U Menu)"
+      "name": "boot1"
     },
     {
       "titleID": "0005001010000200",
-      "name": "DRH firmware (Required for Wii U Menu)"
+      "name": "DRH firmware"
     },
     {
       "titleID": "0005000e1fbf1000",
-      "name": "DRC System Applet (Required for Wii U Menu)"
+      "name": "DRC System Applet"
     },
     {
       "titleID": "0005001010000400",
-      "name": "Bluetooth firmware (Required for Wii U Menu)"
+      "name": "Bluetooth firmware"
     },
     {
       "titleID": "0005001010004000",
-      "name": "System OS (v0) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v0) (SLC)"
     },
     {
       "titleID": "0005001010004001",
-      "name": "System OS (v1) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v1) (SLC)"
     },
     {
       "titleID": "0005001010004009",
-      "name": "System OS (v9) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v9) (SLC)"
     },
     {
       "titleID": "000500101000400a",
-      "name": "System OS (v10) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v10) (SLC)"
     },
     {
       "titleID": "00050010100040ff",
-      "name": "System OS (v255) (SLC) (Required for Wii U Menu)"
+      "name": "System OS (v255) (SLC)"
     },
     {
       "titleID": "0005001010040000",
-      "name": "Wii U Menu (Required for launch Wii U Menu)"
+      "name": "Wii U Menu"
     },
     {
       "titleID": "0005001010041000",
@@ -602,15 +602,15 @@
     },
     {
       "titleID": "0005001b1004f000",
-      "name": "Software Keyboard Data (swkbd) (Required for Wii U Menu)"
+      "name": "Software Keyboard Data (swkbd)"
     },
     {
       "titleID": "0005001b10050000",
-      "name": "DeviceEula & System Fonts (Required for Wii U Menu)"
+      "name": "DeviceEula & System Fonts"
     },
     {
       "titleID": "0005001b10051000",
-      "name": "Error System Applet Data (erreula) (Required for Wii U Menu)"
+      "name": "Error System Applet Data (erreula)"
     },
     {
       "titleID": "0005001b10052000",
@@ -630,11 +630,11 @@
     },
     {
       "titleID": "0005001b10057000",
-      "name": "System Sound Assets & Boot Screen Resources (Required for Wii U Menu)"
+      "name": "System Sound Assets & Boot Screen Resources"
     },
     {
       "titleID": "0005001b10058000",
-      "name": "DRM Applet Data (drmapp) (Required for Wii U Menu)"
+      "name": "DRM Applet Data (drmapp)"
     },
     {
       "titleID": "0005001b10059000",
@@ -642,7 +642,7 @@
     },
     {
       "titleID": "0005001b1005c000",
-      "name": "Country and language data for nn_ec.rpl (Required for Wii U Menu)"
+      "name": "Country and language data for nn_ec.rpl"
     },
     {
       "titleID": "0005001b1005f000",
@@ -650,7 +650,7 @@
     },
     {
       "titleID": "0005001b10063000",
-      "name": "Wii U Menu Shared Assets (Required for Wii U Menu)"
+      "name": "Wii U Menu Shared Assets"
     },
     {
       "titleID": "0005001b10065000",
@@ -730,7 +730,7 @@
     },
     {
       "titleID": "000500301001a10a",
-      "name": "AOC Overlay App (Required for Wii U Menu)"
+      "name": "AOC Overlay App"
     },
     {
       "titleID": "000500301006d00a",
