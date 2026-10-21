@@ -1608,6 +1608,10 @@ func GetSaveMetaTIDLows(region string) []string {
 	}
 }
 
+func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
+	return copyMenuMetaToSave(mlcRoot, tidLow, tidLow)
+}
+
 func copyMenuMetaToSave(mlcRoot, menuTIDLow, targetTIDLow string) (int, error) {
 	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTIDLow, "meta")
 	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", targetTIDLow, "meta")
@@ -1673,6 +1677,54 @@ func initMiiDatabaseFiles(dbDir string) error {
 	return writeIfMissing(filepath.Join(dbDir, "FCL_DB.dat"), fclDB)
 }
 
+func initMiiStudioSave(commonDir string) error {
+	savePath := filepath.Join(commonDir, "stadio.sav")
+	if _, err := os.Stat(savePath); err == nil {
+		return nil
+	}
+	data := make([]byte, 212992)
+	data[0x0] = 0x4D
+	data[0x1] = 0x53
+	data[0x2] = 0x55
+	data[0x5] = 0x01
+	data[0x7] = 0x05
+	data[0x11] = 0xBA
+	data[0x12] = 0xCC
+	data[0x13] = 0xC3
+	data[0x14] = 0xF9
+	data[0x15] = 0x57
+	data[0x16] = 0x1B
+	data[0x17] = 0xC7
+	data[0x1B] = 0x03
+	data[0x1C] = 0x01
+	data[0x43] = 0x01
+	data[0x44] = 0x01
+	data[0x4007] = 0x02
+	data[0x400F] = 0x02
+	data[0x4010] = 0xDF
+	data[0x4011] = 0xCD
+	data[0x4012] = 0xE8
+	data[0x4013] = 0x3F
+	data[0x4014] = 0x0E
+	data[0x4015] = 0x20
+	data[0x4016] = 0x13
+	data[0x4017] = 0x84
+	data[0x401E] = 0x02
+	data[0x32E07] = 0x01
+	data[0x32E0F] = 0x01
+	data[0x32E10] = 0x01
+	data[0x32E12] = 0x01
+	data[0x32E14] = 0x01
+	data[0x32E16] = 0x01
+	data[0x32E18] = 0x01
+	data[0x32E1E] = 0x02
+	data[0x33107] = 0x02
+	data[0x3310F] = 0x02
+	data[0x33113] = 0x01
+	data[0x33117] = 0x3B
+	return os.WriteFile(savePath, data, 0644)
+}
+
 func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	menuTID := GetMenuTIDLow(region)
 	miiMakerTID := GetMiiMakerTIDLow(region)
@@ -1689,9 +1741,13 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	}
 	totalCopied += n
 
-	miiDBDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common", "db")
+	miiCommonDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common")
+	miiDBDir := filepath.Join(miiCommonDir, "db")
 	if err := initMiiDatabaseFiles(miiDBDir); err != nil {
 		return totalCopied, fmt.Errorf("failed to initialize Mii database: %w", err)
+	}
+	if err := initMiiStudioSave(miiCommonDir); err != nil {
+		return totalCopied, fmt.Errorf("failed to initialize Mii Studio save: %w", err)
 	}
 
 	_ = os.MkdirAll(filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "80000001"), 0755)
@@ -1789,7 +1845,12 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 		warnings = append(warnings, "Wii U Menu save path not created")
 	}
 
-	miiDBDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common", "db")
+	miiCommonDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common")
+	if _, err := os.Stat(filepath.Join(miiCommonDir, "stadio.sav")); err != nil {
+		warnings = append(warnings, "Mii Studio save file missing: stadio.sav")
+	}
+
+	miiDBDir := filepath.Join(miiCommonDir, "db")
 	for _, db := range []string{"FFL_ODB.dat", "FCL_DB.dat"} {
 		if _, err := os.Stat(filepath.Join(miiDBDir, db)); err != nil {
 			warnings = append(warnings, fmt.Sprintf("Mii database file missing: %s", db))

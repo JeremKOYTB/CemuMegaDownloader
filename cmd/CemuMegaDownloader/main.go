@@ -891,13 +891,9 @@ func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client,
 		fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and ensure")
 		fmt.Println("   that 'Load Shared Libraries' is checked in the General tab.")
 	}
-	fmt.Println("3. IMPORTANT: Before launching the Wii U Menu for the first time,")
-	fmt.Println("   launch Mii Maker from Cemu (File -> Load, then browse to:")
-	miiMakerPath := filepath.Join(mlcRoot, "sys", "title", "00050010",
-		cemumegadownloader.GetMiiMakerTIDLow(region), "code", "ffl_app.rpx")
-	fmt.Printf("   %s\n", miiMakerPath)
-	fmt.Println("   Let it fully start, create a Mii if prompted, then close it.")
-	fmt.Println("4. Now launch the Wii U Menu from Cemu.")
+	fmt.Println("3. Launch the Wii U Menu.")
+	fmt.Println("   NOTE: On the first launch, wait 5-8 seconds on the black screen")
+	fmt.Println("   while Cemu initializes background services and compiles shaders.")
 }
 
 func main() {
