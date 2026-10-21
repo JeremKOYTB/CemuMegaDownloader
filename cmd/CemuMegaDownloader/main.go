@@ -738,24 +738,99 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-func checkAndSetupWiiUMenu(mlcRoot string, reader *bufio.Reader) {
+func getMenuTIDForRegion(region string) string {
+	switch region {
+	case "USA":
+		return "10040100"
+	case "JPN":
+		return "10040000"
+	default:
+		return "10040200"
+	}
+}
+
+func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
+	var missingTIDs []string
+
+	menuTIDLow := getMenuTIDForRegion(region)
+	menRpx := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTIDLow, "code", "men.rpx")
+	if _, err := os.Stat(menRpx); err != nil {
+		missingTIDs = append(missingTIDs, "00050010"+menuTIDLow)
+	}
+
 	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
 	nnSlPath := filepath.Join(rplDir, "nn_sl.rpl")
 	drmAppPath := filepath.Join(rplDir, "drmapp.rpl")
-
-	if _, err := os.Stat(nnSlPath); err != nil {
-		return
+	if _, err1 := os.Stat(nnSlPath); err1 != nil {
+		missingTIDs = append(missingTIDs, "000500101000400a")
+	} else if _, err2 := os.Stat(drmAppPath); err2 != nil {
+		missingTIDs = append(missingTIDs, "000500101000400a")
 	}
-	if _, err := os.Stat(drmAppPath); err != nil {
+
+	sharedTIDs := []string{
+		"1004f000", "10050000", "10051000",
+		"10057000", "10058000", "1005c000", "10063000",
+	}
+	for _, sTID := range sharedTIDs {
+		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
+		if _, err := os.Stat(dir); err != nil {
+			missingTIDs = append(missingTIDs, "0005001b"+sTID)
+		}
+	}
+
+	seen := make(map[string]bool)
+	var uniqueMissing []string
+	for _, tid := range missingTIDs {
+		if !seen[tid] {
+			seen[tid] = true
+			uniqueMissing = append(uniqueMissing, tid)
+		}
+	}
+
+	return uniqueMissing, len(uniqueMissing) == 0
+}
+
+func checkAndSetupWiiUMenu(mlcRoot, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool) {
+	missingTIDs, isValid := validateWiiUMenuMLC(mlcRoot, region)
+
+	if !isValid {
+		fmt.Println("\n[Notice] Some required system titles/files for the Wii U Menu were omitted or missing in the MLC.")
+		fmt.Println("[Notice] Ineligible for automatic Wii U Menu setup.")
+
+		if isRetry {
+			fmt.Println("[Error] Required system titles are still missing after retry. Process finished.")
+			return
+		}
+
+		prompt := "Would you like to download the missing required system titles now? [Y/n]: "
+		if askYesNo(reader, prompt, true) {
+			var reqItems []TitleItem
+			for _, tid := range missingTIDs {
+				reqItems = append(reqItems, TitleItem{
+					TitleID:  tid,
+					Name:     "Required System Title (" + tid + ")",
+					Path:     resolveMLCDestPath(mlcRoot, tid),
+					Selected: true,
+				})
+			}
+
+			fmt.Println("\n[Info] Downloading missing required Wii U Menu titles...")
+			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, reader, true)
+			return
+		}
+
+		fmt.Println("[Info] Process finished without Wii U Menu configuration.")
 		return
 	}
 
 	fmt.Println()
-	prompt := "All required titles for the Wii U Menu are detected. Would you like to configure Cemu 2.0+ to run the Wii U Menu? [Y/n]: "
+	prompt := "All required titles for the Wii U Menu are detected!\nWould you like to configure Cemu 2.0+ to run the Wii U Menu? [Y/n]: "
 	if !askYesNo(reader, prompt, true) {
+		fmt.Println("[Info] Wii U Menu setup skipped. Process finished.")
 		return
 	}
 
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
 	cemuDir := filepath.Dir(mlcRoot)
 	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
 
@@ -911,10 +986,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, reader)
+	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, reader, false)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot string, reader *bufio.Reader) {
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot string, reader *bufio.Reader, isRetry bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -1015,7 +1090,7 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		checkAndSetupWiiUMenu(mlcRoot, reader)
+		checkAndSetupWiiUMenu(mlcRoot, region, client, reader, cleanInstall, isRetry)
 		fmt.Println("\nPress Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(0)
