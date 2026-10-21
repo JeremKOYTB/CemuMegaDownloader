@@ -9,6 +9,10 @@
       "name": "DRH firmware (Required for Wii U Menu)"
     },
     {
+      "titleID": "0005000e1fbf1000",
+      "name": "DRC System Applet (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010000400",
       "name": "Bluetooth firmware (Required for Wii U Menu)"
     },
@@ -251,6 +255,10 @@
       "name": "DRH firmware (Required for Wii U Menu)"
     },
     {
+      "titleID": "0005000e1fbf1000",
+      "name": "DRC System Applet (Required for Wii U Menu)"
+    },
+    {
       "titleID": "0005001010000400",
       "name": "Bluetooth firmware (Required for Wii U Menu)"
     },
@@ -491,6 +499,10 @@
     {
       "titleID": "0005001010000200",
       "name": "DRH firmware (Required for Wii U Menu)"
+    },
+    {
+      "titleID": "0005000e1fbf1000",
+      "name": "DRC System Applet (Required for Wii U Menu)"
     },
     {
       "titleID": "0005001010000400",
