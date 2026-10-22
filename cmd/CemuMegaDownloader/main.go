@@ -796,7 +796,7 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 	}
 	for _, sTID := range sharedTIDs {
 		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
-		if _, err := os.Stat(dir); err != nil {
+		if err := cemumegadownloader.VerifyTitle("0005001b"+sTID, dir); err != nil {
 			missingTIDs = append(missingTIDs, "0005001b"+sTID)
 		}
 	}
@@ -1165,6 +1165,7 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 	} else {
 		fmt.Printf("[Error] Titles failing verification: %v\n", finalMissingOrCorrupt)
 		fmt.Println("[Error] Some titles were not able to be downloaded or verified.")
+		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry, cemu2xMode)
 		fmt.Println("Press Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(1)
