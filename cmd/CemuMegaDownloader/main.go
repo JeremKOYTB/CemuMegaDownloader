@@ -657,7 +657,7 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 				} else {
 					availName := innerW - 24
 					nameStr := fitMiddle(items[idx].Name, availName)
-					namePad := max(0, availName-len([]rune(nameStr)))
+					namePad := max(0, nameW-len([]rune(nameStr)))
 					rowContent := fmt.Sprintf("%s%s%s  %s%s", prefix, box, items[idx].TitleID, nameStr, strings.Repeat(" ", namePad))
 					printBordered(rowContent)
 				}
@@ -798,6 +798,22 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
 		if err := cemumegadownloader.VerifyTitle("0005001b"+sTID, dir); err != nil {
 			missingTIDs = append(missingTIDs, "0005001b"+sTID)
+		}
+	}
+
+	var appletLowTIDs []string
+	switch region {
+	case "USA":
+		appletLowTIDs = []string{"10010109", "1001010a", "10011109", "1001110a", "100111ff", "10017109", "1001710a"}
+	case "JPN":
+		appletLowTIDs = []string{"10010009", "1001000a", "10011009", "1001100a", "100110ff", "10017009", "1001700a"}
+	default:
+		appletLowTIDs = []string{"10010209", "1001020a", "10011209", "1001120a", "100112ff", "10017209", "1001720a"}
+	}
+	for _, aTID := range appletLowTIDs {
+		dir := filepath.Join(mlcRoot, "sys", "title", "00050030", aTID)
+		if err := cemumegadownloader.VerifyTitle("00050030"+aTID, dir); err != nil {
+			missingTIDs = append(missingTIDs, "00050030"+aTID)
 		}
 	}
 
@@ -1017,11 +1033,16 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 	sysTitleDir := filepath.Join(mlcRoot, "sys", "title")
 	if entries, err := os.ReadDir(sysTitleDir); err == nil && len(entries) > 0 {
 		fmt.Println("\nExisting system titles were detected in this mlc01 directory.")
-		if askYesNo(reader, "Do you want to perform a clean installation (purge previous 'sys' title data)? [y/N]: ", false) {
+		if askYesNo(reader, "Do you want to perform a clean installation (purge previous 'sys' title data and reset Wii U Menu cache)? [y/N]: ", false) {
 			cleanInstall = true
 			_ = os.RemoveAll(sysTitleDir)
 			_ = os.MkdirAll(sysTitleDir, 0755)
-			fmt.Println("[Info] Clean installation enabled: 'sys/title' has been purged. 'usr' was left untouched.")
+
+			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "00050010"))
+			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "system", "act"))
+			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "system", "pdm"))
+
+			fmt.Println("[Info] Clean installation enabled: 'sys/title' and system caches have been purged. User game saves ('usr/save/00050000') were left untouched.")
 		}
 	}
 
@@ -1169,5 +1190,91 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 		fmt.Println("Press Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(1)
+	}
+}
+
+func enableVirtualTerminal() func() {
+	if runtime.GOOS == "windows" {
+		handle := syscall.Handle(os.Stdout.Fd())
+		var mode uint32
+		if err := syscall.GetConsoleMode(handle, &mode); err == nil {
+			const enableVirtualTerminalProcessing = 0x0004
+			_ = syscall.SetConsoleMode(handle, mode|enableVirtualTerminalProcessing)
+			return func() {
+				_ = syscall.SetConsoleMode(handle, mode)
+			}
+		}
+	}
+	return func() {}
+}
+
+func enterRawTerminal() func() {
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = term.Restore(fd, oldState)
+	}
+}
+
+func flushStdin() {
+	var buf [64]byte
+	for {
+		hasInput := false
+		if runtime.GOOS == "windows" {
+			hasInput = false
+		}
+		if !hasInput {
+			break
+		}
+		n, _ := os.Stdin.Read(buf[:])
+		if n == 0 {
+			break
+		}
+	}
+}
+
+func readKeyWithTimeout(timeout time.Duration) KeyCode {
+	ch := make(chan KeyCode, 1)
+	go func() {
+		var buf [8]byte
+		n, err := os.Stdin.Read(buf[:])
+		if err != nil || n == 0 {
+			ch <- KeyNone
+			return
+		}
+		switch {
+		case n == 1 && (buf[0] == '\r' || buf[0] == '\n'):
+			ch <- KeyEnter
+		case n == 1 && buf[0] == ' ':
+			ch <- KeySpace
+		case n == 1 && (buf[0] == 'a' || buf[0] == 'A'):
+			ch <- KeyToggleAll
+		case n == 1 && (buf[0] == 'q' || buf[0] == 'Q' || buf[0] == 27):
+			ch <- KeyQuit
+		case n == 3 && buf[0] == 27 && buf[1] == '[' && buf[2] == 'A':
+			ch <- KeyUp
+		case n == 3 && buf[0] == 27 && buf[1] == '[' && buf[2] == 'B':
+			ch <- KeyDown
+		case n >= 2 && buf[0] == 224:
+			if buf[1] == 72 {
+				ch <- KeyUp
+			} else if buf[1] == 80 {
+				ch <- KeyDown
+			} else {
+				ch <- KeyNone
+			}
+		default:
+			ch <- KeyNone
+		}
+	}()
+
+	select {
+	case k := <-ch:
+		return k
+	case <-time.After(timeout):
+		return KeyNone
 	}
 }
