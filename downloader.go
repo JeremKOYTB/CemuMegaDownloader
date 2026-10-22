@@ -1945,16 +1945,19 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 		resp.Body.Close()
 
 		if errors.Is(readErr, io.EOF) {
-			if expectedSize > 0 && downloadedThisAttempt != expectedSize {
-				_ = os.Remove(dstPath)
-				if downloadedThisAttempt > 0 && onProgress != nil {
-					onProgress(-downloadedThisAttempt)
+			if expectedSize > 0 {
+				alignedSize := (expectedSize + 15) &^ 15
+				if downloadedThisAttempt != expectedSize && downloadedThisAttempt != alignedSize && downloadedThisAttempt < expectedSize {
+					_ = os.Remove(dstPath)
+					if downloadedThisAttempt > 0 && onProgress != nil {
+						onProgress(-downloadedThisAttempt)
+					}
+					if attempt < maxRetries {
+						time.Sleep(retryDelay)
+						continue
+					}
+					return fmt.Errorf("download size mismatch for %s: got %d, expected %d", filepath.Base(dstPath), downloadedThisAttempt, expectedSize)
 				}
-				if attempt < maxRetries {
-					time.Sleep(retryDelay)
-					continue
-				}
-				return fmt.Errorf("download size mismatch for %s: got %d, expected %d", filepath.Base(dstPath), downloadedThisAttempt, expectedSize)
 			}
 			return nil
 		}
