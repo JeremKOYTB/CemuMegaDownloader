@@ -1290,20 +1290,19 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 			tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
 		}
 
-		// Correctif de compatibilité pour le menu EUR (Version Data) sur Cemu
+		// Patch de compatibilité pour le Version Data EUR (0005001010041200)
 		if normTID == "0005001010041200" {
-			resp, err := http.Get("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/0005001010041100/tmd")
-			if err == nil && resp.StatusCode == http.StatusOK {
-				if usaTMD, errRead := io.ReadAll(resp.Body); errRead == nil && len(usaTMD) > 0 {
-					tmdToWrite = usaTMD
-				}
-				_ = resp.Body.Close()
+			if len(tmdToWrite) > 0x191 {
+				tmdCopy := make([]byte, len(tmdToWrite))
+				copy(tmdCopy, tmdToWrite)
+				tmdCopy[0x191] = 0x11 // Patch le TitleID dans le TMD (10041200 -> 10041100)
+				tmdToWrite = tmdCopy
 			}
 
 			if len(fstDec) > 0x8E {
 				fstCopy := make([]byte, len(fstDec))
 				copy(fstCopy, fstDec)
-				fstCopy[0x8E] = 0x11
+				fstCopy[0x8E] = 0x11 // Patch la région dans le FST
 				fstDec = fstCopy
 			}
 		}
