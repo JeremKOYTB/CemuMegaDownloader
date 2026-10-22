@@ -420,10 +420,13 @@ func resolveMLCDestPath(baseDir, titleID string) string {
 	}
 
 	high := strings.ToLower(clean[:8])
+	if high == "0005001b" {
+		high = "0005001B"
+	}
 	low := strings.ToUpper(clean[8:])
 
 	subFolder := "sys"
-	switch high {
+	switch strings.ToLower(clean[:8]) {
 	case "00050000", "00050002", "0005000b", "0005000c":
 		subFolder = "usr"
 	}
@@ -792,7 +795,7 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 		"10057000", "10058000", "1005C000", "10063000",
 	}
 	for _, sTID := range sharedTIDs {
-		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
+		dir := filepath.Join(mlcRoot, "sys", "title", "0005001B", sTID)
 		if err := cemumegadownloader.VerifyTitle("0005001b"+sTID, dir); err != nil {
 			missingTIDs = append(missingTIDs, "0005001b"+sTID)
 		}
