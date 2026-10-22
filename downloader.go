@@ -1292,10 +1292,10 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 
 		// Patch de compatibilité pour le Version Data EUR (0005001010041200)
 		if normTID == "0005001010041200" {
-			if len(tmdToWrite) > 0x191 {
+			if len(tmdToWrite) > 0x192 {
 				tmdCopy := make([]byte, len(tmdToWrite))
 				copy(tmdCopy, tmdToWrite)
-				tmdCopy[0x191] = 0x11 // Patch le TitleID dans le TMD (10041200 -> 10041100)
+				tmdCopy[0x192] = 0x11 // Patch le TitleID dans le TMD (10041200 -> 10041100)
 				tmdToWrite = tmdCopy
 			}
 
