@@ -262,6 +262,12 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 		MLC map[string][]string `json:"MLC"`
 	}
 
+	mandatoryApplets := map[string][]string{
+		"EUR": {"0005003010010209", "0005003010011209", "00050030100112ff", "0005003010017209"},
+		"USA": {"0005003010010109", "0005003010011109", "00050030100111ff", "0005003010017109"},
+		"JPN": {"0005003010010009", "0005003010011009", "00050030100110ff", "0005003010017009"},
+	}
+
 	if rawMLC != "" && json.Unmarshal([]byte(rawMLC), &parsedMLC) == nil && len(parsedMLC.MLC) > 0 {
 		catalog := TitlesCatalog{
 			EUR: []TitleDefinition{},
@@ -298,6 +304,9 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 				addTID(tid)
 			}
 			for _, tid := range parsedMLC.MLC[reg] {
+				addTID(tid)
+			}
+			for _, tid := range mandatoryApplets[reg] {
 				addTID(tid)
 			}
 			return out
