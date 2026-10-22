@@ -41,7 +41,7 @@ const (
 	maxHTTPMetadataBytes   = 16 * 1024 * 1024
 	maxRetries             = 5
 	retryDelay             = 3 * time.Second
-	maxConcurrentDownloads = 4
+	maxConcurrentDownloads = 3
 	RemoteMLCTitlesURL     = "https://raw.githubusercontent.com/Xpl0itU/MLCRestorerDownloader/refs/heads/main/titles.json"
 	wiiuBrewDBURL          = "https://wiiubrew.org/wiki/Title_database"
 )
@@ -1879,19 +1879,25 @@ func GetTitleSize(titleID string, client *http.Client) (int64, error) {
 }
 
 func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath string, expectedSize int64, onProgress func(int64)) error {
+	_ = os.Remove(dstPath)
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+		reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Minute)
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, downloadURL, nil)
 		if err != nil {
+			reqCancel()
 			return err
 		}
 		req.Header.Set("User-Agent", "WiiUDownloader")
 
 		resp, err := client.Do(req)
 		if err != nil {
+			reqCancel()
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -1904,6 +1910,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
+			reqCancel()
 			if attempt < maxRetries {
 				time.Sleep(retryDelay)
 				continue
@@ -1914,6 +1921,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 		file, err := os.Create(dstPath)
 		if err != nil {
 			resp.Body.Close()
+			reqCancel()
 			return err
 		}
 
@@ -1928,6 +1936,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 				if _, writeErr := file.Write(buf[:n]); writeErr != nil {
 					file.Close()
 					resp.Body.Close()
+					reqCancel()
 					_ = os.Remove(dstPath)
 					return writeErr
 				}
@@ -1943,8 +1952,9 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 
 		file.Close()
 		resp.Body.Close()
+		reqCancel()
 
-		if errors.Is(readErr, io.EOF) {
+		if errors.Is(readErr, io.EOF) || readErr == nil {
 			if expectedSize > 0 {
 				alignedSize := (expectedSize + 15) &^ 15
 				if downloadedThisAttempt != expectedSize && downloadedThisAttempt != alignedSize && downloadedThisAttempt < expectedSize {
@@ -1962,11 +1972,10 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 			return nil
 		}
 
+		_ = os.Remove(dstPath)
 		if downloadedThisAttempt > 0 && onProgress != nil {
 			onProgress(-downloadedThisAttempt)
 		}
-
-		_ = os.Remove(dstPath)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1993,6 +2002,9 @@ func DownloadAndExtractTitle(
 	normTID := NormalizeTID(titleID)
 	baseURL := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s", normTID)
 
+	downloadClient := *client
+	downloadClient.Timeout = 0
+
 	if cleanInstall {
 		normTarget := filepath.Clean(targetDir)
 		pathParts := strings.Split(normTarget, string(filepath.Separator))
@@ -2016,12 +2028,12 @@ func DownloadAndExtractTitle(
 	var tmdErr error
 	if v := getPinnedTitleVersion(normTID); v > 0 {
 		pinnedURL := fmt.Sprintf("%s/tmd.%d", baseURL, v)
-		tmdErr = downloadFile(ctx, client, pinnedURL, tmdPath, -1, nil)
+		tmdErr = downloadFile(ctx, &downloadClient, pinnedURL, tmdPath, -1, nil)
 		if tmdErr != nil {
-			tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
+			tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
 		}
 	} else {
-		tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
+		tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
 	}
 	if tmdErr != nil {
 		return tmdErr
@@ -2038,11 +2050,11 @@ func DownloadAndExtractTitle(
 	}
 
 	tikPath := filepath.Join(targetDir, "title.tik")
-	if err := downloadFile(ctx, client, fmt.Sprintf("%s/cetk", baseURL), tikPath, -1, nil); err != nil {
+	if err := downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/cetk", baseURL), tikPath, -1, nil); err != nil {
 		return err
 	}
 
-	if err := generateCert(ctx, tmd, filepath.Join(targetDir, "title.cert"), client); err != nil {
+	if err := generateCert(ctx, tmd, filepath.Join(targetDir, "title.cert"), &downloadClient); err != nil {
 		return err
 	}
 
@@ -2099,7 +2111,7 @@ func DownloadAndExtractTitle(
 				return
 			}
 
-			if err := downloadFile(ctx, client, task.url, task.path, task.expectedSize, onProgress); err != nil {
+			if err := downloadFile(ctx, &downloadClient, task.url, task.path, task.expectedSize, onProgress); err != nil {
 				errChan <- err
 			}
 		}(t)
