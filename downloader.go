@@ -479,6 +479,19 @@ func ParseTMD(data []byte) (*TMD, error) {
 	return tmd, nil
 }
 
+func getTrimmedTMDBytes(rawTMD []byte, tmd *TMD) []byte {
+	var certOffset uint64
+	if tmd.Version == 0x00 {
+		certOffset = uint64(0x1E4) + (uint64(tmd.ContentCount) * 0x24)
+	} else {
+		certOffset = uint64(0xB04) + (uint64(tmd.ContentCount) * 0x30)
+	}
+	if uint64(len(rawTMD)) >= certOffset {
+		return rawTMD[:certOffset]
+	}
+	return rawTMD
+}
+
 func getDefaultRootCert(ctx context.Context, client *http.Client) ([]byte, error) {
 	certCacheLock.Lock()
 	defer certCacheLock.Unlock()
@@ -1146,6 +1159,31 @@ func shouldZeroBootLogo(normTID string) bool {
 	}
 }
 
+func shouldKeepCodeFSTAndTMD(normTID string) bool {
+	if strings.HasPrefix(normTID, "0005001b") {
+		return true
+	}
+	switch normTID {
+	case "0005001010041200", "0005001010041100", "0005001010041000",
+		"0005001010043200", "0005001010043100", "0005001010043000",
+		"000500101004e200", "000500101004e100", "000500101004e000",
+		"0005001010066000",
+		"0005003010011209", "0005003010011109", "0005003010011009",
+		"000500301001a10a":
+		return true
+	}
+	return false
+}
+
+func shouldTrimCodeTMD(normTID string) bool {
+	switch normTID {
+	case "0005001b10042400", "0005001b10056000", "0005001b10057000", "0005003010011209":
+		return true
+	default:
+		return false
+	}
+}
+
 func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	workDir = filepath.Clean(strings.TrimRight(workDir, "/\\"))
 	targetDir = filepath.Clean(strings.TrimRight(targetDir, "/\\"))
@@ -1166,6 +1204,11 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 
 	if IsRawTitle(normTID) {
 		return ExtractRawTitle(targetDir, tmd, titleBlock)
+	}
+
+	rawTMD, err := os.ReadFile(tmdPath)
+	if err != nil {
+		return err
 	}
 
 	var c0 *Content
@@ -1230,6 +1273,15 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	}
 
 	if isFST {
+		if shouldKeepCodeFSTAndTMD(normTID) {
+			tmdToWrite := rawTMD
+			if shouldTrimCodeTMD(normTID) {
+				tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
+			}
+			_ = os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644)
+			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644)
+		}
+
 		contentMap := make(map[uint16]Content, len(tmd.Contents))
 		for _, c := range tmd.Contents {
 			contentMap[c.Index] = c
@@ -1364,33 +1416,33 @@ func GetMenuTIDLow(region string) string {
 func GetMiiMakerTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004a100"
+		return "1004A100"
 	case "JPN":
-		return "1004a000"
+		return "1004A000"
 	default:
-		return "1004a200"
+		return "1004A200"
 	}
 }
 
 func GetDailyLogTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004c100"
+		return "1004C100"
 	case "JPN":
-		return "1004c000"
+		return "1004C000"
 	default:
-		return "1004c200"
+		return "1004C200"
 	}
 }
 
 func GetNotificationsTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004d100"
+		return "1004D100"
 	case "JPN":
-		return "1004d000"
+		return "1004D000"
 	default:
-		return "1004d200"
+		return "1004D200"
 	}
 }
 
@@ -1647,7 +1699,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 }
 
 func SetupCafeLibs(mlcRoot, cemuDir string) (int, error) {
-	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400A", "code")
 	cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
 
 	if err := os.MkdirAll(cafeLibsDir, 0755); err != nil {
@@ -1704,7 +1756,7 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 		warnings = append(warnings, "Wii U Menu (men.rpx) not found")
 	}
 
-	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400A", "code")
 	for _, rpl := range []string{"nn_sl.rpl", "drmapp.rpl"} {
 		if _, err := os.Stat(filepath.Join(rplDir, rpl)); err != nil {
 			warnings = append(warnings, fmt.Sprintf("Required RPL %s not found in OSv10", rpl))
@@ -1753,8 +1805,8 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 	}
 
 	sharedTIDs := []string{
-		"1004f000", "10050000", "10051000",
-		"10057000", "10058000", "1005c000", "10063000",
+		"1004F000", "10050000", "10051000",
+		"10057000", "10058000", "1005C000", "10063000",
 	}
 	for _, sTID := range sharedTIDs {
 		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
@@ -1774,29 +1826,22 @@ func CleanRawNUSFiles(dir string, titleID string) {
 		return
 	}
 
-	if IsRawTitle(normTID) {
+	if normTID == "0005001010000400" || normTID == "0005001010066000" {
+		return
+	}
+
+	if normTID == "0005001010000100" {
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
 			}
 			name := strings.ToLower(e.Name())
-			switch normTID {
-			case "0005001010000100":
-				if strings.HasSuffix(name, ".app") ||
-					strings.HasSuffix(name, ".h3") ||
-					name == "title.tmd" ||
-					name == "title.tik" ||
-					name == "title.cert" {
-					_ = os.Remove(filepath.Join(dir, e.Name()))
-				}
-			case "0005001010000400":
-				if strings.HasSuffix(name, ".app") ||
-					strings.HasSuffix(name, ".h3") ||
-					name == "title.cert" ||
-					name == "title.tmd" ||
-					name == "title.tik" {
-					_ = os.Remove(filepath.Join(dir, e.Name()))
-				}
+			if strings.HasSuffix(name, ".app") ||
+				strings.HasSuffix(name, ".h3") ||
+				name == "title.tmd" ||
+				name == "title.tik" ||
+				name == "title.cert" {
+				_ = os.Remove(filepath.Join(dir, e.Name()))
 			}
 		}
 		return
