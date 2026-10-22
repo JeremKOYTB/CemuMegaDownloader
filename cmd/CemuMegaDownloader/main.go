@@ -626,7 +626,8 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 			printBordered(" [↑/↓] Navigate | [SPACE] Toggle | [A] Toggle All")
 			printBordered(" [ENTER] Start Download | [Q/ESC] Cancel and Exit")
 
-			showPathColumn := innerW >= 24+maxNameLen+4+15
+			nameW := maxNameLen
+			showPathColumn := innerW >= 24+nameW+4+15
 
 			for i := 0; i < pageSize; i++ {
 				idx := scrollOffset + i
@@ -645,7 +646,6 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 				}
 
 				if showPathColumn {
-					nameW := maxNameLen
 					availPath := max(10, innerW-24-nameW-4)
 					nameStr := fitMiddle(items[idx].Name, nameW)
 					namePad := max(0, nameW-len([]rune(nameStr)))
@@ -657,7 +657,7 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 				} else {
 					availName := innerW - 24
 					nameStr := fitMiddle(items[idx].Name, availName)
-					namePad := max(0, nameW-len([]rune(nameStr)))
+					namePad := max(0, availName-len([]rune(nameStr)))
 					rowContent := fmt.Sprintf("%s%s%s  %s%s", prefix, box, items[idx].TitleID, nameStr, strings.Repeat(" ", namePad))
 					printBordered(rowContent)
 				}
@@ -1190,91 +1190,5 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 		fmt.Println("Press Enter to exit...")
 		_, _ = reader.ReadBytes('\n')
 		os.Exit(1)
-	}
-}
-
-func enableVirtualTerminal() func() {
-	if runtime.GOOS == "windows" {
-		handle := syscall.Handle(os.Stdout.Fd())
-		var mode uint32
-		if err := syscall.GetConsoleMode(handle, &mode); err == nil {
-			const enableVirtualTerminalProcessing = 0x0004
-			_ = syscall.SetConsoleMode(handle, mode|enableVirtualTerminalProcessing)
-			return func() {
-				_ = syscall.SetConsoleMode(handle, mode)
-			}
-		}
-	}
-	return func() {}
-}
-
-func enterRawTerminal() func() {
-	fd := int(os.Stdin.Fd())
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		return func() {}
-	}
-	return func() {
-		_ = term.Restore(fd, oldState)
-	}
-}
-
-func flushStdin() {
-	var buf [64]byte
-	for {
-		hasInput := false
-		if runtime.GOOS == "windows" {
-			hasInput = false
-		}
-		if !hasInput {
-			break
-		}
-		n, _ := os.Stdin.Read(buf[:])
-		if n == 0 {
-			break
-		}
-	}
-}
-
-func readKeyWithTimeout(timeout time.Duration) KeyCode {
-	ch := make(chan KeyCode, 1)
-	go func() {
-		var buf [8]byte
-		n, err := os.Stdin.Read(buf[:])
-		if err != nil || n == 0 {
-			ch <- KeyNone
-			return
-		}
-		switch {
-		case n == 1 && (buf[0] == '\r' || buf[0] == '\n'):
-			ch <- KeyEnter
-		case n == 1 && buf[0] == ' ':
-			ch <- KeySpace
-		case n == 1 && (buf[0] == 'a' || buf[0] == 'A'):
-			ch <- KeyToggleAll
-		case n == 1 && (buf[0] == 'q' || buf[0] == 'Q' || buf[0] == 27):
-			ch <- KeyQuit
-		case n == 3 && buf[0] == 27 && buf[1] == '[' && buf[2] == 'A':
-			ch <- KeyUp
-		case n == 3 && buf[0] == 27 && buf[1] == '[' && buf[2] == 'B':
-			ch <- KeyDown
-		case n >= 2 && buf[0] == 224:
-			if buf[1] == 72 {
-				ch <- KeyUp
-			} else if buf[1] == 80 {
-				ch <- KeyDown
-			} else {
-				ch <- KeyNone
-			}
-		default:
-			ch <- KeyNone
-		}
-	}()
-
-	select {
-	case k := <-ch:
-		return k
-	case <-time.After(timeout):
-		return KeyNone
 	}
 }
