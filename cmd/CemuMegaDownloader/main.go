@@ -491,7 +491,7 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 		}
 		if _, ok := seen[norm]; !ok {
 			seen[norm] = struct{}{}
-			name := entry.Name
+			name := cemumegadownloader.CleanTitleName(entry.Name)
 			if name == "" {
 				name = norm
 			}
@@ -836,7 +836,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 
 	fmt.Println("\nTarget structure for extracted titles:")
 	fmt.Println("1. Cemu 2.x+ Structure (recommended)")
+	fmt.Println("   Includes save data initialization, cafeLibs setup,")
+	fmt.Println("   Mii database creation, and Wii U Menu readiness.")
 	fmt.Println("2. Cemu Legacy Structure")
+	fmt.Println("   Standard download and extraction only.")
 	fmt.Print("Select structure [1/2] (default: 1): ")
 	structChoice := readLineStdin(reader)
 	cemu2xMode := structChoice != "2"
@@ -860,10 +863,26 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall, cemu2xMode)
+	downloadBatch(selectedItems, region, client, cleanInstall, cemu2xMode, reader)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, cemu2xMode bool) {
+func printPostDownloadSteps(cemu2xMode bool) {
+	if !cemu2xMode {
+		fmt.Println("\n[Info] Legacy structure mode: skipping Cemu 2.x+ Wii U Menu setup.")
+		fmt.Println("[Info] Process finished.")
+		return
+	}
+
+	fmt.Println("\nNext steps in Cemu:")
+	fmt.Println("1. Open Cemu and locate 'Wii U Menu' in your game list.")
+	fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and ensure")
+	fmt.Println("   that 'Load Shared Libraries' is checked in the General tab.")
+	fmt.Println("3. Launch the Wii U Menu.")
+	fmt.Println("   NOTE: On the first launch, wait 5-8 seconds on the black screen")
+	fmt.Println("   while Cemu initializes background services and compiles shaders.")
+}
+
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, cemu2xMode bool, reader *bufio.Reader) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -965,14 +984,16 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		fmt.Println("Press Enter to exit...")
-		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
+		printPostDownloadSteps(cemu2xMode)
+		fmt.Println("\nPress Enter to exit...")
+		_, _ = reader.ReadBytes('\n')
 		os.Exit(0)
 	} else {
 		fmt.Printf("[Error] Titles failing verification: %v\n", finalMissingOrCorrupt)
 		fmt.Println("[Error] Some titles were not able to be downloaded or verified.")
+		printPostDownloadSteps(cemu2xMode)
 		fmt.Println("Press Enter to exit...")
-		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
+		_, _ = reader.ReadBytes('\n')
 		os.Exit(1)
 	}
 }
