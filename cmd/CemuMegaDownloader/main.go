@@ -420,10 +420,7 @@ func resolveMLCDestPath(baseDir, titleID string) string {
 	}
 
 	high := strings.ToLower(clean[:8])
-	low := clean[8:]
-	if high == "0005000e" || high == "00050030" {
-		low = strings.ToUpper(low)
-	}
+	low := strings.ToUpper(clean[8:])
 
 	subFolder := "sys"
 	switch high {
@@ -781,7 +778,7 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 		missingTIDs = append(missingTIDs, "00050010"+menuTIDLow)
 	}
 
-	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400a", "code")
+	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400A", "code")
 	nnSlPath := filepath.Join(rplDir, "nn_sl.rpl")
 	drmAppPath := filepath.Join(rplDir, "drmapp.rpl")
 	if _, err1 := os.Stat(nnSlPath); err1 != nil {
@@ -791,8 +788,8 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 	}
 
 	sharedTIDs := []string{
-		"1004f000", "10050000", "10051000",
-		"10057000", "10058000", "1005c000", "10063000",
+		"1004F000", "10050000", "10051000",
+		"10057000", "10058000", "1005C000", "10063000",
 	}
 	for _, sTID := range sharedTIDs {
 		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
@@ -804,11 +801,11 @@ func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
 	var appletLowTIDs []string
 	switch region {
 	case "USA":
-		appletLowTIDs = []string{"10010109", "1001010a", "10011109", "1001110a", "100111ff", "10017109", "1001710a"}
+		appletLowTIDs = []string{"10010109", "1001010A", "10011109", "1001110A", "100111FF", "10017109", "1001710A"}
 	case "JPN":
-		appletLowTIDs = []string{"10010009", "1001000a", "10011009", "1001100a", "100110ff", "10017009", "1001700a"}
+		appletLowTIDs = []string{"10010009", "1001000A", "10011009", "1001100A", "100110FF", "10017009", "1001700A"}
 	default:
-		appletLowTIDs = []string{"10010209", "1001020a", "10011209", "1001120a", "100112ff", "10017209", "1001720a"}
+		appletLowTIDs = []string{"10010209", "1001020A", "10011209", "1001120A", "100112FF", "10017209", "1001720A"}
 	}
 	for _, aTID := range appletLowTIDs {
 		dir := filepath.Join(mlcRoot, "sys", "title", "00050030", aTID)
