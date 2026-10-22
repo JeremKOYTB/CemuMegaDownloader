@@ -816,31 +816,37 @@ func VerifyTitle(titleID, outputDirectory string) error {
 	if IsRawTitle(normTID) {
 		tmdPath := filepath.Join(outputDir, "title.tmd")
 		tikPath := filepath.Join(outputDir, "title.tik")
+
+		// Si les fichiers de manifeste bruts (tmd, tik) et les fichiers .app sont présent,
+		// on valide directement l'intégrité des fichiers bruts téléchargés.
 		if _, err := os.Stat(tmdPath); err == nil {
 			if _, errTik := os.Stat(tikPath); errTik == nil {
 				tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
-				if err != nil {
-					return err
-				}
-				titleBlock, err := aes.NewCipher(titleKey)
-				if err != nil {
-					return err
-				}
-				for _, c := range tmd.Contents {
-					if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
-						return err
+				if err == nil {
+					titleBlock, err := aes.NewCipher(titleKey)
+					if err == nil {
+						hasApps := true
+						for _, c := range tmd.Contents {
+							if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
+								hasApps = false
+								break
+							}
+						}
+						if hasApps {
+							for _, c := range tmd.Contents {
+								if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+									return err
+								}
+							}
+							return nil // Les fichiers .app bruts sont intacts
+						}
 					}
 				}
-				if normTID == "0005001010000400" {
-					decP := filepath.Join(outputDir, "00000000.dec")
-					if st, errDec := os.Stat(decP); errDec != nil || st.Size() == 0 {
-						return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
-					}
-				}
-				return nil
 			}
 		}
 
+		// Si les fichiers .app bruts ne sont plus présents (après extraction/nettoyage),
+		// on vérifie les fichiers déchiffrés .dec
 		switch normTID {
 		case "0005001010000100":
 			decP := filepath.Join(outputDir, "00000009.dec")
