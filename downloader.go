@@ -53,11 +53,12 @@ var (
 	defaultCertCache []byte
 	certCacheLock    sync.Mutex
 
-	reHTMLRow  = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
-	reHTMLCell = regexp.MustCompile(`(?is)<td[^>]*>(.*?)</td>`)
-	reHTMLTag  = regexp.MustCompile(`(?is)<[^>]+>`)
-	reHTMLBr   = regexp.MustCompile(`(?is)<br\s*/?>`)
-	reBrewTID  = regexp.MustCompile(`(0005[0-9a-fA-F]{4}-?[0-9a-fA-F]{8})`)
+	reHTMLRow      = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
+	reHTMLCell     = regexp.MustCompile(`(?is)<td[^>]*>(.*?)</td>`)
+	reHTMLTag      = regexp.MustCompile(`(?is)<[^>]+>`)
+	reHTMLBr       = regexp.MustCompile(`(?is)<br\s*/?>`)
+	reBrewTID      = regexp.MustCompile(`(0005[0-9a-fA-F]{4}-?[0-9a-fA-F]{8})`)
+	reReqMenuParen = regexp.MustCompile(`(?i)\s*\(Required for (?:launch )?Wii U Menu\)`)
 )
 
 type TitleDefinition struct {
@@ -93,6 +94,11 @@ type TMD struct {
 func NormalizeTID(titleID string) string {
 	r := strings.NewReplacer("-", "", "/", "", "\\", "")
 	return strings.ToLower(strings.TrimSpace(r.Replace(titleID)))
+}
+
+func CleanTitleName(name string) string {
+	cleaned := reReqMenuParen.ReplaceAllString(name, "")
+	return strings.TrimSpace(cleaned)
 }
 
 func isSafeSingleName(name string) bool {
@@ -172,20 +178,20 @@ func tmdCertOffset(tmd *TMD) uint64 {
 	return uint64(0xB04) + (uint64(tmd.ContentCount) * 0x30)
 }
 
-func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurTMD *TMD) ([]byte, []byte, []byte, error) {
+func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurTMD *TMD) ([]byte, []byte, error) {
 	baseURL := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s", usaVersionDataTID)
 
 	rawUSATMD, err := fetchNUSBytes(ctx, client, fmt.Sprintf("%s/tmd.%d", baseURL, eurTMD.TitleVersion))
 	if err != nil {
 		rawUSATMD, err = fetchNUSBytes(ctx, client, baseURL+"/tmd")
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
 	parsedUSATMD, err := ParseTMD(rawUSATMD)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	certOff := tmdCertOffset(parsedUSATMD)
@@ -199,10 +205,10 @@ func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurT
 
 	usaTik, err := fetchNUSBytes(ctx, client, baseURL+"/cetk")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if len(usaTik) < 0x1CF {
-		return nil, nil, nil, fmt.Errorf("invalid USA cetk size: %d", len(usaTik))
+		return nil, nil, fmt.Errorf("invalid USA cetk size: %d", len(usaTik))
 	}
 
 	var c0 *Content
@@ -213,15 +219,15 @@ func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurT
 		}
 	}
 	if c0 == nil {
-		return nil, nil, nil, errors.New("content index 0 not found in USA TMD")
+		return nil, nil, errors.New("content index 0 not found in USA TMD")
 	}
 
 	encFST, err := fetchNUSBytes(ctx, client, fmt.Sprintf("%s/%08X", baseURL, c0.ID))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if len(encFST) == 0 {
-		return nil, nil, nil, errors.New("empty USA FST content")
+		return nil, nil, errors.New("empty USA FST content")
 	}
 	if rem := len(encFST) & 0xF; rem != 0 {
 		encFST = append(encFST, make([]byte, 16-rem)...)
@@ -229,7 +235,7 @@ func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurT
 
 	commonBlock, err := aes.NewCipher(WiiUCommonKey)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	var ivTKey [16]byte
@@ -240,7 +246,7 @@ func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurT
 
 	usaTitleBlock, err := aes.NewCipher(usaTitleKey)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	var zeroIV [16]byte
@@ -250,7 +256,7 @@ func fetchUSAVersionDataManifests(ctx context.Context, client *http.Client, eurT
 		decFST = decFST[:c0.Size]
 	}
 
-	return usaTMD, usaTik, decFST, nil
+	return usaTMD, decFST, nil
 }
 
 func patchFSTOwnerTitleID(fst []byte, fromTID, toTID uint64) []byte {
@@ -280,8 +286,9 @@ func loadEmbeddedNameFallback() map[string]string {
 		for _, list := range [][]TitleDefinition{cat.EUR, cat.USA, cat.JPN, cat.All} {
 			for _, item := range list {
 				norm := NormalizeTID(item.TitleID)
-				if norm != "" && item.Name != "" && item.Name != norm {
-					names[norm] = item.Name
+				cleanName := CleanTitleName(item.Name)
+				if norm != "" && cleanName != "" && cleanName != norm {
+					names[norm] = cleanName
 				}
 			}
 		}
@@ -340,6 +347,7 @@ func scrapeWiiUBrewNames(ctx context.Context, client *http.Client) map[string]st
 			resolvedName = cleanDesc
 		}
 
+		resolvedName = CleanTitleName(resolvedName)
 		if resolvedName != "" {
 			names[tid] = resolvedName
 		}
@@ -368,7 +376,7 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 
 	for k, v := range wMap {
 		if v != "" {
-			nameMap[k] = v
+			nameMap[k] = CleanTitleName(v)
 		}
 	}
 
@@ -393,7 +401,7 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 				}
 				if _, exists := seen[norm]; !exists {
 					seen[norm] = struct{}{}
-					titleName := nameMap[norm]
+					titleName := CleanTitleName(nameMap[norm])
 					if titleName == "" {
 						titleName = norm
 					}
@@ -962,60 +970,74 @@ func verifyExtractedFST(outputDir string, tmd *TMD) error {
 
 func VerifyTitle(titleID, outputDirectory string) error {
 	outputDir := strings.TrimRight(outputDirectory, "/\\")
-	tmdPath := filepath.Join(outputDir, "title.tmd")
-	tikPath := filepath.Join(outputDir, "title.tik")
-	certPath := filepath.Join(outputDir, "title.cert")
+	rootTMDPath := filepath.Join(outputDir, "title.tmd")
+	rootTikPath := filepath.Join(outputDir, "title.tik")
 
-	isExtracted := false
-	if _, err := os.Stat(filepath.Join(outputDir, "code", "title.tmd")); err == nil {
-		tmdPath = filepath.Join(outputDir, "code", "title.tmd")
-		tikPath = filepath.Join(outputDir, "code", "title.tik")
-		certPath = filepath.Join(outputDir, "code", "title.cert")
-		isExtracted = true
-	}
-
-	certInfo, err := os.Stat(certPath)
-	if err != nil || certInfo.IsDir() || certInfo.Size() == 0 {
-		return fmt.Errorf("missing or empty title.cert for %s", titleID)
-	}
-
-	tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
-	if err != nil {
-		return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
-	}
-
-	if isExtracted {
-		if _, err := resolveContentFile(outputDir, tmd.Contents[0].ID, ".app"); err != nil {
-			if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
-				return verifyExtractedFST(outputDir, tmd)
+	if _, err1 := os.Stat(rootTMDPath); err1 == nil {
+		if _, err2 := os.Stat(rootTikPath); err2 == nil {
+			tmd, titleKey, err := ReadTMDAndTitleKey(rootTMDPath, rootTikPath, titleID)
+			if err != nil {
+				return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
 			}
-			contentDir := filepath.Join(outputDir, "content")
+
+			titleBlock, err := aes.NewCipher(titleKey)
+			if err != nil {
+				return err
+			}
+
+			hasRawApps := true
 			for _, c := range tmd.Contents {
-				p, cErr := resolveContentFile(contentDir, c.ID, ".app")
-				if cErr != nil {
-					return cErr
-				}
-				st, sErr := os.Stat(p)
-				if sErr != nil || uint64(st.Size()) != c.Size {
-					return fmt.Errorf("extracted content size mismatch for %s", filepath.Base(p))
+				if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
+					hasRawApps = false
+					break
 				}
 			}
-			return nil
+
+			if hasRawApps {
+				for _, c := range tmd.Contents {
+					if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+						return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+					}
+				}
+				return nil
+			}
 		}
 	}
 
-	titleBlock, err := aes.NewCipher(titleKey)
-	if err != nil {
-		return err
-	}
-
-	for _, c := range tmd.Contents {
-		if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
-			return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+	codeTMDPath := filepath.Join(outputDir, "code", "title.tmd")
+	if rawTMD, err := os.ReadFile(codeTMDPath); err == nil {
+		tmd, err := ParseTMD(rawTMD)
+		if err != nil {
+			return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
 		}
+
+		if expectedTID := NormalizeTID(titleID); expectedTID != "" {
+			if expectedInt, err := strconv.ParseUint(expectedTID, 16, 64); err == nil {
+				if !(expectedInt == eurVersionDataTIDUint && tmd.TitleID == usaVersionDataTIDUint) && tmd.TitleID != expectedInt {
+					return fmt.Errorf("TMD title ID mismatch: got %016x, expected %016x", tmd.TitleID, expectedInt)
+				}
+			}
+		}
+
+		if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
+			return verifyExtractedFST(outputDir, tmd)
+		}
+
+		contentDir := filepath.Join(outputDir, "content")
+		for _, c := range tmd.Contents {
+			p, cErr := resolveContentFile(contentDir, c.ID, ".app")
+			if cErr != nil {
+				return cErr
+			}
+			st, sErr := os.Stat(p)
+			if sErr != nil || uint64(st.Size()) != c.Size {
+				return fmt.Errorf("extracted content size mismatch for %s", filepath.Base(p))
+			}
+		}
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("verification failed for %s: missing valid extracted files or manifests", titleID)
 }
 
 func extractFileStandard(srcApp, dstPath string, titleBlock cipher.Block, contentIdx uint16, offset, length uint64) error {
@@ -1237,7 +1259,6 @@ func DecryptAndExtractTitle(ctx context.Context, workDir, targetDir string, clie
 
 	tmdPath := filepath.Join(workDir, "title.tmd")
 	tikPath := filepath.Join(workDir, "title.tik")
-	certPath := filepath.Join(workDir, "title.cert")
 
 	tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, "")
 	if err != nil {
@@ -1248,11 +1269,6 @@ func DecryptAndExtractTitle(ctx context.Context, workDir, targetDir string, clie
 	if err != nil {
 		return err
 	}
-	rawTik, err := os.ReadFile(tikPath)
-	if err != nil {
-		return err
-	}
-	rawCert, _ := os.ReadFile(certPath)
 
 	titleBlock, err := aes.NewCipher(titleKey)
 	if err != nil {
@@ -1306,13 +1322,11 @@ func DecryptAndExtractTitle(ctx context.Context, workDir, targetDir string, clie
 	}
 
 	tmdToWrite := rawTMD
-	tikToWrite := rawTik
 	fstToWrite := fstDec
 
 	if cemu2xMode && tmd.TitleID == eurVersionDataTIDUint {
-		if usaTMD, usaTik, usaFST, errUSA := fetchUSAVersionDataManifests(ctx, client, tmd); errUSA == nil {
+		if usaTMD, usaFST, errUSA := fetchUSAVersionDataManifests(ctx, client, tmd); errUSA == nil {
 			tmdToWrite = usaTMD
-			tikToWrite = usaTik
 			fstToWrite = usaFST
 		} else {
 			if len(tmdToWrite) >= 0x194 {
@@ -1327,14 +1341,6 @@ func DecryptAndExtractTitle(ctx context.Context, workDir, targetDir string, clie
 
 	if err := os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644); err != nil {
 		return err
-	}
-	if err := os.WriteFile(filepath.Join(codeDir, "title.tik"), tikToWrite, 0644); err != nil {
-		return err
-	}
-	if len(rawCert) > 0 {
-		if err := os.WriteFile(filepath.Join(codeDir, "title.cert"), rawCert, 0644); err != nil {
-			return err
-		}
 	}
 
 	isFST := false
