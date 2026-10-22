@@ -1285,11 +1285,30 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	}
 
 	if isFST {
-		if shouldKeepCodeFSTAndTMD(normTID) {
-			tmdToWrite := rawTMD
-			if shouldTrimCodeTMD(normTID) {
-				tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
+		tmdToWrite := rawTMD
+		if shouldTrimCodeTMD(normTID) {
+			tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
+		}
+
+		// Correctif de compatibilité pour le menu EUR (Version Data) sur Cemu
+		if normTID == "0005001010041200" {
+			resp, err := http.Get("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/0005001010041100/tmd")
+			if err == nil && resp.StatusCode == http.StatusOK {
+				if usaTMD, errRead := io.ReadAll(resp.Body); errRead == nil && len(usaTMD) > 0 {
+					tmdToWrite = usaTMD
+				}
+				_ = resp.Body.Close()
 			}
+
+			if len(fstDec) > 0x8E {
+				fstCopy := make([]byte, len(fstDec))
+				copy(fstCopy, fstDec)
+				fstCopy[0x8E] = 0x11
+				fstDec = fstCopy
+			}
+		}
+
+		if shouldKeepCodeFSTAndTMD(normTID) {
 			_ = os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644)
 			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644)
 		}
