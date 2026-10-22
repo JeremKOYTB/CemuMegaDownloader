@@ -470,19 +470,6 @@ func ParseTMD(data []byte) (*TMD, error) {
 	return tmd, nil
 }
 
-func getTrimmedTMDBytes(rawTMD []byte, tmd *TMD) []byte {
-	var certOffset uint64
-	if tmd.Version == 0x00 {
-		certOffset = uint64(0x1E4) + (uint64(tmd.ContentCount) * 0x24)
-	} else {
-		certOffset = uint64(0xB04) + (uint64(tmd.ContentCount) * 0x30)
-	}
-	if uint64(len(rawTMD)) >= certOffset {
-		return rawTMD[:certOffset]
-	}
-	return rawTMD
-}
-
 func getDefaultRootCert(ctx context.Context, client *http.Client) ([]byte, error) {
 	certCacheLock.Lock()
 	defer certCacheLock.Unlock()
@@ -800,113 +787,6 @@ func verifySingleContent(workDir string, c Content, titleBlock cipher.Block) err
 	return nil
 }
 
-func verifyExtractedFSTData(outputDir string, fstDec []byte, tmd *TMD) error {
-	if len(fstDec) < 0x20 {
-		return fmt.Errorf("title.fst too small: %d bytes", len(fstDec))
-	}
-
-	infoCount := binary.BigEndian.Uint32(fstDec[0x08:0x0C])
-	entriesPtr := uint64(0x20) + (uint64(infoCount) * 0x20)
-	if entriesPtr+16 > uint64(len(fstDec)) {
-		return fmt.Errorf("invalid FST header: entriesPtr out of bounds")
-	}
-
-	totalEntries := binary.BigEndian.Uint32(fstDec[entriesPtr+8 : entriesPtr+12])
-	nameTableOff := entriesPtr + (uint64(totalEntries) * 0x10)
-	if nameTableOff > uint64(len(fstDec)) || totalEntries == 0 || totalEntries >= 100000 {
-		return fmt.Errorf("invalid FST table: totalEntries (%d) or nameTableOff out of bounds", totalEntries)
-	}
-
-	var contentMap map[uint16]Content
-	if tmd != nil {
-		contentMap = make(map[uint16]Content, len(tmd.Contents))
-		for _, c := range tmd.Contents {
-			contentMap[c.Index] = c
-		}
-	}
-
-	pathStack := []string{outputDir}
-	endStack := []uint32{totalEntries}
-
-	for i := uint32(1); i < totalEntries; i++ {
-		for len(endStack) > 0 && i >= endStack[len(endStack)-1] {
-			pathStack = pathStack[:len(pathStack)-1]
-			endStack = endStack[:len(endStack)-1]
-		}
-		if len(pathStack) == 0 {
-			return errors.New("corrupted FST directory hierarchy")
-		}
-
-		off := entriesPtr + (uint64(i) * 0x10)
-		if off+16 > uint64(len(fstDec)) {
-			return fmt.Errorf("FST entry %d out of bounds", i)
-		}
-
-		eType := fstDec[off]
-		eNameOff := (uint32(fstDec[off+1]) << 16) | (uint32(fstDec[off+2]) << 8) | uint32(fstDec[off+3])
-		eLen := binary.BigEndian.Uint32(fstDec[off+8 : off+12])
-		eCID := binary.BigEndian.Uint16(fstDec[off+14 : off+16])
-
-		nameStart := nameTableOff + uint64(eNameOff)
-		if nameStart >= uint64(len(fstDec)) {
-			continue
-		}
-		nameEnd := bytes.IndexByte(fstDec[nameStart:], 0)
-		if nameEnd == -1 {
-			continue
-		}
-		name := string(fstDec[nameStart : nameStart+uint64(nameEnd)])
-		if !isSafeSingleName(name) {
-			if (eType & 0x01) != 0 && eLen > i+1 && eLen <= totalEntries {
-				i = eLen - 1
-			}
-			continue
-		}
-
-		currentPath := filepath.Join(pathStack[len(pathStack)-1], name)
-		if !isPathInsideBase(outputDir, currentPath) {
-			if (eType & 0x01) != 0 && eLen > i+1 && eLen <= totalEntries {
-				i = eLen - 1
-			}
-			continue
-		}
-
-		if (eType & 0x01) != 0 {
-			if eLen <= i || eLen > totalEntries {
-				return fmt.Errorf("invalid FST directory end index %d at entry %d", eLen, i)
-			}
-			pathStack = append(pathStack, currentPath)
-			endStack = append(endStack, eLen)
-		} else if (eType & 0x80) == 0 {
-			if contentMap != nil {
-				if _, ok := contentMap[eCID]; !ok {
-					continue
-				}
-			}
-			st, err := os.Stat(currentPath)
-			if err != nil || st.IsDir() {
-				return fmt.Errorf("missing extracted file %s", currentPath)
-			}
-			if strings.EqualFold(name, "bootLogoTex.tga") && st.Size() == 0 {
-				continue
-			}
-			if uint64(st.Size()) != uint64(eLen) {
-				return fmt.Errorf("extracted file size mismatch for %s: got %d, expected %d", currentPath, st.Size(), eLen)
-			}
-		}
-	}
-	return nil
-}
-
-func verifyExtractedFST(outputDir string, tmd *TMD) error {
-	fstPath := filepath.Join(outputDir, "code", "title.fst")
-	fstDec, err := os.ReadFile(fstPath)
-	if err != nil {
-		return fmt.Errorf("failed to read title.fst: %w", err)
-	}
-	return verifyExtractedFSTData(outputDir, fstDec, tmd)
-}
-
 func VerifyTitle(titleID, outputDirectory string) error {
 	outputDir := strings.TrimRight(outputDirectory, "/\\")
 	normTID := NormalizeTID(titleID)
@@ -949,13 +829,6 @@ func VerifyTitle(titleID, outputDirectory string) error {
 			}
 			return nil
 		case "0005001010000400":
-			appP, err := resolveContentFile(outputDir, 0x00, ".app")
-			if err != nil {
-				return err
-			}
-			if st, err := os.Stat(appP); err != nil || st.Size() == 0 {
-				return fmt.Errorf("missing or empty 00000000.app for %s", titleID)
-			}
 			decP := filepath.Join(outputDir, "00000000.dec")
 			if st, err := os.Stat(decP); err != nil || st.Size() == 0 {
 				return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
@@ -967,73 +840,42 @@ func VerifyTitle(titleID, outputDirectory string) error {
 	tmdPath := filepath.Join(outputDir, "title.tmd")
 	tikPath := filepath.Join(outputDir, "title.tik")
 
-	hasRootManifest := false
 	if _, err1 := os.Stat(tmdPath); err1 == nil {
 		if _, err2 := os.Stat(tikPath); err2 == nil {
-			hasRootManifest = true
-		}
-	}
-
-	hasCodeManifest := false
-	if !hasRootManifest {
-		codeTMD := filepath.Join(outputDir, "code", "title.tmd")
-		codeTik := filepath.Join(outputDir, "code", "title.tik")
-		if _, err1 := os.Stat(codeTMD); err1 == nil {
-			if _, err2 := os.Stat(codeTik); err2 == nil {
-				tmdPath = codeTMD
-				tikPath = codeTik
-				hasCodeManifest = true
+			tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
+			if err != nil {
+				return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
 			}
-		}
-	}
 
-	if hasRootManifest || hasCodeManifest {
-		tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
-		if err != nil {
-			return fmt.Errorf("integrity check failed for %s: %w", titleID, err)
-		}
-
-		titleBlock, err := aes.NewCipher(titleKey)
-		if err != nil {
-			return err
-		}
-
-		hasRawApps := true
-		for _, c := range tmd.Contents {
-			if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
-				hasRawApps = false
-				break
+			titleBlock, err := aes.NewCipher(titleKey)
+			if err != nil {
+				return err
 			}
-		}
 
-		if hasRawApps {
+			hasRawApps := true
 			for _, c := range tmd.Contents {
-				if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
-					return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+				if _, err := resolveContentFile(outputDir, c.ID, ".app"); err != nil {
+					hasRawApps = false
+					break
 				}
 			}
-		}
 
-		if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
-			return verifyExtractedFST(outputDir, tmd)
+			if hasRawApps {
+				for _, c := range tmd.Contents {
+					if err := verifySingleContent(outputDir, c, titleBlock); err != nil {
+						return fmt.Errorf("title %s content %08X verification failed: %w", titleID, c.ID, err)
+					}
+				}
+				return nil
+			}
 		}
+	}
 
-		if hasRawApps {
+	for _, sub := range []string{"code", "content", "meta"} {
+		subDir := filepath.Join(outputDir, sub)
+		if entries, err := os.ReadDir(subDir); err == nil && len(entries) > 0 {
 			return nil
 		}
-	}
-
-	if _, fstErr := os.Stat(filepath.Join(outputDir, "code", "title.fst")); fstErr == nil {
-		var tmd *TMD
-		if rawTMD, err := os.ReadFile(filepath.Join(outputDir, "code", "title.tmd")); err == nil {
-			tmd, _ = ParseTMD(rawTMD)
-		}
-		return verifyExtractedFST(outputDir, tmd)
-	}
-
-	codeDir := filepath.Join(outputDir, "code")
-	if entries, err := os.ReadDir(codeDir); err == nil && len(entries) > 0 {
-		return nil
 	}
 
 	return fmt.Errorf("verification failed for %s: missing valid extracted files or manifests", titleID)
@@ -1286,24 +1128,6 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func shouldSkipCodeManifests(normTID string) bool {
-	switch normTID {
-	case "0005000e1fbf1000", "0005001010000200", "0005001010004000", "0005001010004001":
-		return true
-	default:
-		return false
-	}
-}
-
-func shouldTrimCodeTMD(normTID string) bool {
-	switch normTID {
-	case "0005001b10042400", "0005001b10056000", "0005001b10057000", "0005003010011209":
-		return true
-	default:
-		return false
-	}
-}
-
 func shouldZeroBootLogo(normTID string) bool {
 	switch normTID {
 	case "0005001010066000", "0005003010011209", "000500301001120a", "00050030100112ff":
@@ -1334,16 +1158,6 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	if IsRawTitle(normTID) {
 		return ExtractRawTitle(targetDir, tmd, titleBlock)
 	}
-
-	rawTMD, err := os.ReadFile(tmdPath)
-	if err != nil {
-		return err
-	}
-	rawTik, err := os.ReadFile(tikPath)
-	if err != nil {
-		return err
-	}
-	rawCert, _ := os.ReadFile(filepath.Join(workDir, "title.cert"))
 
 	var c0 *Content
 	for i := range tmd.Contents {
@@ -1384,26 +1198,6 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 		return err
 	}
 
-	if !shouldSkipCodeManifests(normTID) {
-		tmdToWrite := rawTMD
-		if shouldTrimCodeTMD(normTID) {
-			tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
-		}
-		if err := os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644); err != nil {
-			return err
-		}
-		if normTID != "000500301001a10a" {
-			if err := os.WriteFile(filepath.Join(codeDir, "title.tik"), rawTik, 0644); err != nil {
-				return err
-			}
-			if len(rawCert) > 0 {
-				if err := os.WriteFile(filepath.Join(codeDir, "title.cert"), rawCert, 0644); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
 	isFST := false
 	var totalEntries uint32
 	var entriesPtr, nameTableOff uint64
@@ -1427,12 +1221,6 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	}
 
 	if isFST {
-		if !shouldSkipCodeManifests(normTID) {
-			if err := os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644); err != nil {
-				return err
-			}
-		}
-
 		contentMap := make(map[uint16]Content, len(tmd.Contents))
 		for _, c := range tmd.Contents {
 			contentMap[c.Index] = c
@@ -1537,10 +1325,6 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 				}
 			}
 		}
-
-		if err := verifyExtractedFSTData(targetDir, fstDec, tmd); err != nil {
-			return err
-		}
 	} else {
 		for _, c := range tmd.Contents {
 			srcApp, err := resolveContentFile(workDir, c.ID, ".app")
@@ -1624,12 +1408,8 @@ func GetSaveMetaTIDLows(region string) []string {
 }
 
 func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
-	return copyMenuMetaToSave(mlcRoot, tidLow, tidLow)
-}
-
-func copyMenuMetaToSave(mlcRoot, menuTIDLow, targetTIDLow string) (int, error) {
-	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTIDLow, "meta")
-	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", targetTIDLow, "meta")
+	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
+	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta")
 
 	if _, err := os.Stat(srcDir); err != nil {
 		return 0, nil
@@ -1744,6 +1524,12 @@ func initSystemActData(mlcRoot string) error {
 	for _, sysSub := range []string{"config", "import", "update"} {
 		_ = os.MkdirAll(filepath.Join(mlcRoot, "sys", sysSub), 0755)
 	}
+	actFile := filepath.Join(mlcRoot, "usr", "save", "system", "act", "80000001", "account.dat")
+	if data, err := os.ReadFile(actFile); err == nil {
+		if !strings.Contains(string(data), "MiiData=") {
+			_ = os.Remove(actFile)
+		}
+	}
 	return nil
 }
 
@@ -1802,6 +1588,11 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	menuSaveDir := filepath.Join(mlcRoot, "usr", "save", "00050010", menuTID, "user")
 	_ = os.MkdirAll(filepath.Join(menuSaveDir, "common"), 0755)
 	_ = os.MkdirAll(filepath.Join(menuSaveDir, "80000001"), 0755)
+
+	baristaDB := filepath.Join(menuSaveDir, "common", "BaristaIconDataBase.dat")
+	if st, err := os.Stat(baristaDB); err == nil && st.Size() < 500000 {
+		_ = os.Remove(baristaDB)
+	}
 
 	totalCopied := 0
 
@@ -1990,7 +1781,11 @@ func CleanRawNUSFiles(dir string, titleID string) {
 					_ = os.Remove(filepath.Join(dir, e.Name()))
 				}
 			case "0005001010000400":
-				if name == "title.cert" {
+				if strings.HasSuffix(name, ".app") ||
+					strings.HasSuffix(name, ".h3") ||
+					name == "title.cert" ||
+					name == "title.tmd" ||
+					name == "title.tik" {
 					_ = os.Remove(filepath.Join(dir, e.Name()))
 				}
 			}
@@ -1998,22 +1793,15 @@ func CleanRawNUSFiles(dir string, titleID string) {
 		return
 	}
 
-	if normTID == "0005001010066000" {
-		_ = os.Remove(filepath.Join(dir, "title.cert"))
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".dec") {
-				_ = os.Remove(filepath.Join(dir, e.Name()))
-			}
+	hasExtracted := false
+	for _, sub := range []string{"code", "content", "meta"} {
+		if st, err := os.Stat(filepath.Join(dir, sub)); err == nil && st.IsDir() {
+			hasExtracted = true
+			break
 		}
-		return
 	}
 
-	hasExtractedCode := false
-	if st, err := os.Stat(filepath.Join(dir, "code")); err == nil && st.IsDir() {
-		hasExtractedCode = true
-	}
-
-	if hasExtractedCode {
+	if hasExtracted {
 		for _, e := range entries {
 			if !e.IsDir() {
 				name := strings.ToLower(e.Name())
