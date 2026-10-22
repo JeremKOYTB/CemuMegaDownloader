@@ -41,7 +41,7 @@ const (
 	maxHTTPMetadataBytes   = 16 * 1024 * 1024
 	maxRetries             = 5
 	retryDelay             = 3 * time.Second
-	maxConcurrentDownloads = 3
+	maxConcurrentDownloads = 4
 	RemoteMLCTitlesURL     = "https://raw.githubusercontent.com/Xpl0itU/MLCRestorerDownloader/refs/heads/main/titles.json"
 	wiiuBrewDBURL          = "https://wiiubrew.org/wiki/Title_database"
 )
@@ -775,6 +775,7 @@ func verifySingleContent(workDir string, c Content, titleBlock cipher.Block) err
 			} else {
 				decMode.CryptBlocks(decBuf[:nRead], buf[:nRead])
 				decSlice = decBuf[:nRead]
+				chunkLen = uint64(nRead)
 			}
 
 			if processedSize+uint64(len(decSlice)) >= c.Size {
@@ -1286,30 +1287,11 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	if isFST {
 		if shouldKeepCodeFSTAndTMD(normTID) {
 			tmdToWrite := rawTMD
-			fstToWrite := fstDec
-
-			if normTID == "0005001010041200" {
-				resp, err := http.Get("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/0005001010041100/tmd")
-				if err == nil && resp.StatusCode == http.StatusOK {
-					if usaTMD, errRead := io.ReadAll(resp.Body); errRead == nil && len(usaTMD) > 0 {
-						tmdToWrite = usaTMD
-					}
-					_ = resp.Body.Close()
-				}
-
-				if len(fstToWrite) > 0x8E {
-					fstCopy := make([]byte, len(fstToWrite))
-					copy(fstCopy, fstToWrite)
-					fstCopy[0x8E] = 0x11
-					fstToWrite = fstCopy
-				}
-			}
-
 			if shouldTrimCodeTMD(normTID) {
-				tmdToWrite = getTrimmedTMDBytes(tmdToWrite, tmd)
+				tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
 			}
 			_ = os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644)
-			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstToWrite, 0644)
+			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644)
 		}
 
 		contentMap := make(map[uint16]Content, len(tmd.Contents))
@@ -1878,26 +1860,23 @@ func GetTitleSize(titleID string, client *http.Client) (int64, error) {
 	return int64(total), nil
 }
 
-func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath string, expectedSize int64, onProgress func(int64)) error {
-	_ = os.Remove(dstPath)
-
+func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath string, onProgress func(int64)) error {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
+			_ = os.Remove(dstPath)
 			return err
 		}
 
-		reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Minute)
-
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, downloadURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 		if err != nil {
-			reqCancel()
+			_ = os.Remove(dstPath)
 			return err
 		}
 		req.Header.Set("User-Agent", "WiiUDownloader")
 
 		resp, err := client.Do(req)
 		if err != nil {
-			reqCancel()
+			_ = os.Remove(dstPath)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -1910,7 +1889,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			reqCancel()
+			_ = os.Remove(dstPath)
 			if attempt < maxRetries {
 				time.Sleep(retryDelay)
 				continue
@@ -1921,7 +1900,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 		file, err := os.Create(dstPath)
 		if err != nil {
 			resp.Body.Close()
-			reqCancel()
+			_ = os.Remove(dstPath)
 			return err
 		}
 
@@ -1936,7 +1915,6 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 				if _, writeErr := file.Write(buf[:n]); writeErr != nil {
 					file.Close()
 					resp.Body.Close()
-					reqCancel()
 					_ = os.Remove(dstPath)
 					return writeErr
 				}
@@ -1952,23 +1930,8 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 
 		file.Close()
 		resp.Body.Close()
-		reqCancel()
 
 		if errors.Is(readErr, io.EOF) || readErr == nil {
-			if expectedSize > 0 {
-				alignedSize := (expectedSize + 15) &^ 15
-				if downloadedThisAttempt != expectedSize && downloadedThisAttempt != alignedSize && downloadedThisAttempt < expectedSize {
-					_ = os.Remove(dstPath)
-					if downloadedThisAttempt > 0 && onProgress != nil {
-						onProgress(-downloadedThisAttempt)
-					}
-					if attempt < maxRetries {
-						time.Sleep(retryDelay)
-						continue
-					}
-					return fmt.Errorf("download size mismatch for %s: got %d, expected %d", filepath.Base(dstPath), downloadedThisAttempt, expectedSize)
-				}
-			}
 			return nil
 		}
 
@@ -2028,12 +1991,12 @@ func DownloadAndExtractTitle(
 	var tmdErr error
 	if v := getPinnedTitleVersion(normTID); v > 0 {
 		pinnedURL := fmt.Sprintf("%s/tmd.%d", baseURL, v)
-		tmdErr = downloadFile(ctx, &downloadClient, pinnedURL, tmdPath, -1, nil)
+		tmdErr = downloadFile(ctx, &downloadClient, pinnedURL, tmdPath, nil)
 		if tmdErr != nil {
-			tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
+			tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
 		}
 	} else {
-		tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
+		tmdErr = downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
 	}
 	if tmdErr != nil {
 		return tmdErr
@@ -2050,7 +2013,7 @@ func DownloadAndExtractTitle(
 	}
 
 	tikPath := filepath.Join(targetDir, "title.tik")
-	if err := downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/cetk", baseURL), tikPath, -1, nil); err != nil {
+	if err := downloadFile(ctx, &downloadClient, fmt.Sprintf("%s/cetk", baseURL), tikPath, nil); err != nil {
 		return err
 	}
 
@@ -2061,9 +2024,8 @@ func DownloadAndExtractTitle(
 	useLowerCaseApp := normTID == "0005001010000400"
 
 	type dlTask struct {
-		url          string
-		path         string
-		expectedSize int64
+		url  string
+		path string
 	}
 	var tasks []dlTask
 
@@ -2076,9 +2038,8 @@ func DownloadAndExtractTitle(
 		}
 
 		tasks = append(tasks, dlTask{
-			url:          fmt.Sprintf("%s/%08x", baseURL, c.ID),
-			path:         filepath.Join(targetDir, appFileName),
-			expectedSize: int64(c.Size),
+			url:  fmt.Sprintf("%s/%08x", baseURL, c.ID),
+			path: filepath.Join(targetDir, appFileName),
 		})
 		if (c.Type & 0x02) != 0 {
 			h3FileName := fmt.Sprintf("%08X.h3", c.ID)
@@ -2088,9 +2049,8 @@ func DownloadAndExtractTitle(
 				_ = os.Remove(filepath.Join(targetDir, fmt.Sprintf("%08x.h3", c.ID)))
 			}
 			tasks = append(tasks, dlTask{
-				url:          fmt.Sprintf("%s/%08x.h3", baseURL, c.ID),
-				path:         filepath.Join(targetDir, h3FileName),
-				expectedSize: -1,
+				url:  fmt.Sprintf("%s/%08x.h3", baseURL, c.ID),
+				path: filepath.Join(targetDir, h3FileName),
 			})
 		}
 	}
@@ -2111,7 +2071,7 @@ func DownloadAndExtractTitle(
 				return
 			}
 
-			if err := downloadFile(ctx, &downloadClient, task.url, task.path, task.expectedSize, onProgress); err != nil {
+			if err := downloadFile(ctx, &downloadClient, task.url, task.path, onProgress); err != nil {
 				errChan <- err
 			}
 		}(t)
