@@ -1262,6 +1262,11 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 		return err
 	}
 
+	metaDir := filepath.Join(targetDir, "meta")
+	if err := os.MkdirAll(metaDir, 0755); err != nil {
+		return err
+	}
+
 	isFST := false
 	var totalEntries uint32
 	var entriesPtr, nameTableOff uint64
