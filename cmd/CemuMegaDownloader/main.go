@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -350,7 +349,7 @@ func extractMLCPathFromSettingsXML(xmlPath string) string {
 	return ""
 }
 
-func detectCemuDirectory() (cemuDir string, mlcDir string) {
+func detectCemuMLCDirectory() string {
 	var candidates []string
 	homeDir, _ := os.UserHomeDir()
 
@@ -395,48 +394,50 @@ func detectCemuDirectory() (cemuDir string, mlcDir string) {
 			mlcCustom := extractMLCPathFromSettingsXML(xmlFile)
 			if mlcCustom != "" {
 				if infoMlc, err := os.Stat(mlcCustom); err == nil && infoMlc.IsDir() {
-					return c, mlcCustom
+					return mlcCustom
 				}
 			}
 			mlcDefault := filepath.Join(c, "mlc01")
 			if infoMlc, err := os.Stat(mlcDefault); err == nil && infoMlc.IsDir() {
-				return c, mlcDefault
+				return mlcDefault
 			}
 		}
 
 		directMlc := filepath.Join(c, "mlc01")
 		if infoMlc, err := os.Stat(directMlc); err == nil && infoMlc.IsDir() {
-			return c, directMlc
+			return directMlc
 		}
 	}
 
-	return "", ""
+	return ""
 }
 
 func resolveMLCDestPath(baseDir, titleID string) string {
 	clean := cemumegadownloader.NormalizeTID(titleID)
-	if len(clean) < 16 {
-		clean = fmt.Sprintf("%016s", clean)
+	high := clean
+	low := ""
+	if len(clean) >= 16 {
+		high = clean[:8]
+		low = clean[8:]
 	}
-
-	high := strings.ToLower(clean[:8])
-	if high == "0005001b" {
-		high = "0005001B"
-	}
-	low := strings.ToUpper(clean[8:])
 
 	subFolder := "sys"
-	switch strings.ToLower(clean[:8]) {
-	case "00050000", "00050002", "0005000b", "0005000c":
+	if high == "0005000b" || high == "00050000" || high == "00050002" || high == "0005000c" || high == "0005000e" {
 		subFolder = "usr"
 	}
 
 	baseClean := cleanPathInput(baseDir)
 	if strings.HasSuffix(strings.ToLower(baseClean), "mlc01") {
-		return filepath.Join(baseClean, subFolder, "title", high, low)
+		if low != "" {
+			return filepath.Join(baseClean, subFolder, "title", high, low)
+		}
+		return filepath.Join(baseClean, subFolder, "title", clean)
 	}
 
-	return filepath.Join(baseClean, "mlc01", subFolder, "title", high, low)
+	if low != "" {
+		return filepath.Join(baseClean, "mlc01", subFolder, "title", high, low)
+	}
+	return filepath.Join(baseClean, "mlc01", subFolder, "title", clean)
 }
 
 func ensureTitlesJSONData(client *http.Client) ([]byte, error) {
@@ -449,29 +450,6 @@ func ensureTitlesJSONData(client *http.Client) ([]byte, error) {
 		if data, err := os.ReadFile(p); err == nil && len(data) > 64 {
 			var cat cemumegadownloader.TitlesCatalog
 			if json.Unmarshal(data, &cat) == nil && len(cat.EUR) > 0 && cat.EUR[0].Name != "" && cat.EUR[0].Name != cat.EUR[0].TitleID {
-				needsRewrite := false
-				cleanList := func(list []cemumegadownloader.TitleDefinition) {
-					for i := range list {
-						cleaned := cemumegadownloader.CleanTitleName(list[i].Name)
-						if cleaned != list[i].Name {
-							list[i].Name = cleaned
-							needsRewrite = true
-						}
-					}
-				}
-				cleanList(cat.EUR)
-				cleanList(cat.USA)
-				cleanList(cat.JPN)
-				if len(cat.All) > 0 {
-					cat.All = nil
-					needsRewrite = true
-				}
-				if needsRewrite {
-					if updatedBytes, err := json.MarshalIndent(cat, "", "  "); err == nil {
-						_ = os.WriteFile(p, updatedBytes, 0644)
-						return updatedBytes, nil
-					}
-				}
 				return data, nil
 			}
 		}
@@ -501,9 +479,7 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 	case "JPN":
 		regionList = append(regionList, cat.JPN...)
 	}
-	if len(cat.All) > 0 {
-		regionList = append(regionList, cat.All...)
-	}
+	regionList = append(regionList, cat.All...)
 
 	seen := make(map[string]struct{})
 	items := make([]TitleItem, 0, len(regionList))
@@ -515,7 +491,7 @@ func LoadTitlesForRegion(region, baseDir string, client *http.Client) ([]TitleIt
 		}
 		if _, ok := seen[norm]; !ok {
 			seen[norm] = struct{}{}
-			name := cemumegadownloader.CleanTitleName(entry.Name)
+			name := entry.Name
 			if name == "" {
 				name = norm
 			}
@@ -626,8 +602,7 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 			printBordered(" [↑/↓] Navigate | [SPACE] Toggle | [A] Toggle All")
 			printBordered(" [ENTER] Start Download | [Q/ESC] Cancel and Exit")
 
-			nameW := maxNameLen
-			showPathColumn := innerW >= 24+nameW+4+15
+			showPathColumn := innerW >= 24+maxNameLen+4+15
 
 			for i := 0; i < pageSize; i++ {
 				idx := scrollOffset + i
@@ -646,6 +621,7 @@ func SelectTitlesInteractive(items []TitleItem, region string) ([]TitleItem, boo
 				}
 
 				if showPathColumn {
+					nameW := maxNameLen
 					availPath := max(10, innerW-24-nameW-4)
 					nameStr := fitMiddle(items[idx].Name, nameW)
 					namePad := max(0, nameW-len([]rune(nameStr)))
@@ -742,179 +718,6 @@ func askYesNo(reader *bufio.Reader, prompt string, defaultYes bool) bool {
 	}
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err = io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
-}
-
-func getMenuTIDForRegion(region string) string {
-	switch region {
-	case "USA":
-		return "10040100"
-	case "JPN":
-		return "10040000"
-	default:
-		return "10040200"
-	}
-}
-
-func validateWiiUMenuMLC(mlcRoot, region string) ([]string, bool) {
-	var missingTIDs []string
-
-	menuTIDLow := getMenuTIDForRegion(region)
-	menRpx := filepath.Join(mlcRoot, "sys", "title", "00050010", menuTIDLow, "code", "men.rpx")
-	if _, err := os.Stat(menRpx); err != nil {
-		missingTIDs = append(missingTIDs, "00050010"+menuTIDLow)
-	}
-
-	rplDir := filepath.Join(mlcRoot, "sys", "title", "00050010", "1000400A", "code")
-	nnSlPath := filepath.Join(rplDir, "nn_sl.rpl")
-	drmAppPath := filepath.Join(rplDir, "drmapp.rpl")
-	if _, err1 := os.Stat(nnSlPath); err1 != nil {
-		missingTIDs = append(missingTIDs, "000500101000400a")
-	} else if _, err2 := os.Stat(drmAppPath); err2 != nil {
-		missingTIDs = append(missingTIDs, "000500101000400a")
-	}
-
-	sharedTIDs := []string{
-		"1004F000", "10050000", "10051000",
-		"10057000", "10058000", "1005C000", "10063000",
-	}
-	for _, sTID := range sharedTIDs {
-		dir := filepath.Join(mlcRoot, "sys", "title", "0005001B", sTID)
-		if err := cemumegadownloader.VerifyTitle("0005001b"+sTID, dir); err != nil {
-			missingTIDs = append(missingTIDs, "0005001b"+sTID)
-		}
-	}
-
-	var appletLowTIDs []string
-	switch region {
-	case "USA":
-		appletLowTIDs = []string{"10010109", "1001010A", "10011109", "1001110A", "100111FF", "10017109", "1001710A"}
-	case "JPN":
-		appletLowTIDs = []string{"10010009", "1001000A", "10011009", "1001100A", "100110FF", "10017009", "1001700A"}
-	default:
-		appletLowTIDs = []string{"10010209", "1001020A", "10011209", "1001120A", "100112FF", "10017209", "1001720A"}
-	}
-	for _, aTID := range appletLowTIDs {
-		dir := filepath.Join(mlcRoot, "sys", "title", "00050030", aTID)
-		if err := cemumegadownloader.VerifyTitle("00050030"+aTID, dir); err != nil {
-			missingTIDs = append(missingTIDs, "00050030"+aTID)
-		}
-	}
-
-	seen := make(map[string]bool)
-	var uniqueMissing []string
-	for _, tid := range missingTIDs {
-		if !seen[tid] {
-			seen[tid] = true
-			uniqueMissing = append(uniqueMissing, tid)
-		}
-	}
-
-	return uniqueMissing, len(uniqueMissing) == 0
-}
-
-func checkAndSetupWiiUMenu(mlcRoot, cemuDir, region string, client *http.Client, reader *bufio.Reader, cleanInstall bool, isRetry bool, cemu2xMode bool) {
-	missingTIDs, isValid := validateWiiUMenuMLC(mlcRoot, region)
-
-	if !isValid {
-		fmt.Println("\n[Notice] Some required system titles/files for the Wii U Menu were omitted or missing in the MLC.")
-		fmt.Println("[Notice] Ineligible for automatic Wii U Menu setup.")
-
-		if isRetry {
-			fmt.Println("[Error] Required system titles are still missing after retry. Process finished.")
-			return
-		}
-
-		prompt := "Would you like to download the missing required system titles now? [Y/n]: "
-		if askYesNo(reader, prompt, true) {
-			var reqItems []TitleItem
-			for _, tid := range missingTIDs {
-				reqItems = append(reqItems, TitleItem{
-					TitleID:  tid,
-					Name:     "System Title " + tid,
-					Path:     resolveMLCDestPath(mlcRoot, tid),
-					Selected: true,
-				})
-			}
-
-			fmt.Println("\n[Info] Downloading missing required Wii U Menu titles...")
-			downloadBatch(reqItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, true, cemu2xMode)
-			return
-		}
-
-		fmt.Println("[Info] Process finished without Wii U Menu configuration.")
-		return
-	}
-
-	if !cemu2xMode {
-		fmt.Println("\n[Info] Legacy structure mode: skipping Cemu 2.x+ Wii U Menu setup.")
-		fmt.Println("[Info] Process finished.")
-		return
-	}
-
-	if cemuDir == "" {
-		cemuDir = filepath.Dir(mlcRoot)
-	}
-
-	fmt.Println("\n[Info] Setting up Cemu 2.x+ Wii U Menu structure...")
-
-	metaCopied, err := cemumegadownloader.SetupCemu2xSaveData(mlcRoot, region)
-	if err != nil {
-		fmt.Printf("[Error] Failed to set up save data: %v\n", err)
-	} else {
-		fmt.Printf("[Info] Save data initialized: %d meta files copied, Mii database created.\n", metaCopied)
-	}
-
-	cafeLibsAlreadyPresent := cemumegadownloader.CheckCafeLibsPresent(cemuDir)
-
-	rplCount, err := cemumegadownloader.SetupCafeLibs(mlcRoot, cemuDir)
-	if err != nil {
-		fmt.Printf("[Error] Failed to set up cafeLibs: %v\n", err)
-	} else {
-		cafeLibsDir := filepath.Join(cemuDir, "cafeLibs")
-		fmt.Printf("[Info] %d RPL library files placed in: %s\n", rplCount, cafeLibsDir)
-	}
-
-	warnings := cemumegadownloader.ValidateCemu2xSetup(mlcRoot, cemuDir, region)
-	if len(warnings) > 0 {
-		fmt.Println("\n[Warning] Cemu 2.x+ validation issues:")
-		for _, w := range warnings {
-			fmt.Printf("  - %s\n", w)
-		}
-	} else {
-		fmt.Println("[Info] Cemu 2.x+ structure validation passed.")
-	}
-
-	fmt.Println("\nNext steps in Cemu:")
-	fmt.Println("1. Open Cemu and locate 'Wii U Menu' in your game list.")
-	if cafeLibsAlreadyPresent {
-		fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and verify")
-		fmt.Println("   that 'Load Shared Libraries' is checked (it should already be).")
-	} else {
-		fmt.Println("2. Right-click 'Wii U Menu' -> 'Edit Game Profile' and ensure")
-		fmt.Println("   that 'Load Shared Libraries' is checked in the General tab.")
-	}
-	fmt.Println("3. Launch the Wii U Menu.")
-	fmt.Println("   NOTE: On the first launch, wait 5-8 seconds on the black screen")
-	fmt.Println("   while Cemu initializes background services and compiles shaders.")
-}
-
 func main() {
 	cleanupVT := enableVirtualTerminal()
 	defer cleanupVT()
@@ -962,17 +765,15 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 	client := newHTTPClient()
 
 	var targetBaseDir string
-	var cemuDir string
 	cleanInstall := false
 
-	detectedCemuDir, detectedMlc := detectCemuDirectory()
+	detectedMlc := detectCemuMLCDirectory()
 	if detectedMlc != "" {
 		absMlc, _ := filepath.Abs(detectedMlc)
 		fmt.Printf("\n[Cemu Detected] mlc01 directory found at:\n  %s\n", absMlc)
 		if err := checkDirectoryWritable(absMlc); err == nil {
 			if askYesNo(reader, "Do you want to install titles directly into this Cemu folder? [Y/n]: ", true) {
 				targetBaseDir = absMlc
-				cemuDir = detectedCemuDir
 				fmt.Printf("[Info] Destination set to: %s\n", targetBaseDir)
 			}
 		} else {
@@ -1016,14 +817,6 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		mlcRoot = filepath.Join(mlcRoot, "mlc01")
 	}
 
-	if cemuDir == "" {
-		if detectedCemuDir != "" {
-			cemuDir = detectedCemuDir
-		} else {
-			cemuDir = filepath.Dir(mlcRoot)
-		}
-	}
-
 	usrDir := filepath.Join(mlcRoot, "usr")
 	if entries, err := os.ReadDir(usrDir); err == nil && len(entries) > 0 {
 		fmt.Printf("\n[Notice] Existing 'usr' directory detected at:\n  %s\n", usrDir)
@@ -1033,25 +826,17 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 	sysTitleDir := filepath.Join(mlcRoot, "sys", "title")
 	if entries, err := os.ReadDir(sysTitleDir); err == nil && len(entries) > 0 {
 		fmt.Println("\nExisting system titles were detected in this mlc01 directory.")
-		if askYesNo(reader, "Do you want to perform a clean installation (purge previous 'sys' title data and reset Wii U Menu cache)? [y/N]: ", false) {
+		if askYesNo(reader, "Do you want to perform a clean installation (purge previous 'sys' title data)? [y/N]: ", false) {
 			cleanInstall = true
 			_ = os.RemoveAll(sysTitleDir)
 			_ = os.MkdirAll(sysTitleDir, 0755)
-
-			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "00050010"))
-			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "system", "act"))
-			_ = os.RemoveAll(filepath.Join(mlcRoot, "usr", "save", "system", "pdm"))
-
-			fmt.Println("[Info] Clean installation enabled: 'sys/title' and system caches have been purged. User game saves ('usr/save/00050000') were left untouched.")
+			fmt.Println("[Info] Clean installation enabled: 'sys/title' has been purged. 'usr' was left untouched.")
 		}
 	}
 
 	fmt.Println("\nTarget structure for extracted titles:")
 	fmt.Println("1. Cemu 2.x+ Structure (recommended)")
-	fmt.Println("   Includes save data initialization, cafeLibs setup,")
-	fmt.Println("   Mii database creation, and Wii U Menu readiness.")
 	fmt.Println("2. Cemu Legacy Structure")
-	fmt.Println("   Standard download and extraction only.")
 	fmt.Print("Select structure [1/2] (default: 1): ")
 	structChoice := readLineStdin(reader)
 	cemu2xMode := structChoice != "2"
@@ -1075,10 +860,10 @@ func startRegionWorkflow(region string, reader *bufio.Reader) {
 		return
 	}
 
-	downloadBatch(selectedItems, region, client, cleanInstall, mlcRoot, cemuDir, reader, false, cemu2xMode)
+	downloadBatch(selectedItems, region, client, cleanInstall, cemu2xMode)
 }
 
-func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, mlcRoot, cemuDir string, reader *bufio.Reader, isRetry bool, cemu2xMode bool) {
+func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client, cleanInstall bool, cemu2xMode bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 
@@ -1143,6 +928,7 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 				item.Path,
 				client,
 				cleanInstall,
+				cemu2xMode,
 				progressReporter.AddBytes,
 			)
 			if err != nil {
@@ -1179,16 +965,14 @@ func downloadBatch(chosenTitles []TitleItem, region string, client *http.Client,
 
 	if len(finalMissingOrCorrupt) == 0 && len(failedTitles) == 0 {
 		fmt.Println("[Info] All done! Every single title is complete, verified, and ready for Cemu.")
-		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry, cemu2xMode)
-		fmt.Println("\nPress Enter to exit...")
-		_, _ = reader.ReadBytes('\n')
+		fmt.Println("Press Enter to exit...")
+		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
 		os.Exit(0)
 	} else {
 		fmt.Printf("[Error] Titles failing verification: %v\n", finalMissingOrCorrupt)
 		fmt.Println("[Error] Some titles were not able to be downloaded or verified.")
-		checkAndSetupWiiUMenu(mlcRoot, cemuDir, region, client, reader, cleanInstall, isRetry, cemu2xMode)
 		fmt.Println("Press Enter to exit...")
-		_, _ = reader.ReadBytes('\n')
+		_, _ = bufio.NewReader(os.Stdin).ReadBytes('\n')
 		os.Exit(1)
 	}
 }
