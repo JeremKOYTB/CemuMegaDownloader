@@ -340,7 +340,7 @@ func GenerateTitlesJSON(client *http.Client, dstPath string) ([]byte, error) {
 			cleanCat.All = nil
 			if outBytes, err := json.MarshalIndent(cleanCat, "", "  "); err == nil {
 				if dstPath != "" {
-					_ = os.WriteFile(dstPath, outBytes, 0644)
+					_ = os.WriteFile(dstPath, EmbeddedTitlesJSON, 0644)
 				}
 				return outBytes, nil
 			}
@@ -1878,7 +1878,7 @@ func GetTitleSize(titleID string, client *http.Client) (int64, error) {
 	return int64(total), nil
 }
 
-func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath string, onProgress func(int64)) error {
+func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath string, expectedSize int64, onProgress func(int64)) error {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -1928,6 +1928,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 				if _, writeErr := file.Write(buf[:n]); writeErr != nil {
 					file.Close()
 					resp.Body.Close()
+					_ = os.Remove(dstPath)
 					return writeErr
 				}
 				downloadedThisAttempt += int64(n)
@@ -1944,12 +1945,25 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 		resp.Body.Close()
 
 		if errors.Is(readErr, io.EOF) {
+			if expectedSize > 0 && downloadedThisAttempt != expectedSize {
+				_ = os.Remove(dstPath)
+				if downloadedThisAttempt > 0 && onProgress != nil {
+					onProgress(-downloadedThisAttempt)
+				}
+				if attempt < maxRetries {
+					time.Sleep(retryDelay)
+					continue
+				}
+				return fmt.Errorf("download size mismatch for %s: got %d, expected %d", filepath.Base(dstPath), downloadedThisAttempt, expectedSize)
+			}
 			return nil
 		}
 
 		if downloadedThisAttempt > 0 && onProgress != nil {
 			onProgress(-downloadedThisAttempt)
 		}
+
+		_ = os.Remove(dstPath)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1961,6 +1975,7 @@ func downloadFile(ctx context.Context, client *http.Client, downloadURL, dstPath
 		return readErr
 	}
 
+	_ = os.Remove(dstPath)
 	return fmt.Errorf("failed to download %s after %d retries", downloadURL, maxRetries)
 }
 
@@ -1998,12 +2013,12 @@ func DownloadAndExtractTitle(
 	var tmdErr error
 	if v := getPinnedTitleVersion(normTID); v > 0 {
 		pinnedURL := fmt.Sprintf("%s/tmd.%d", baseURL, v)
-		tmdErr = downloadFile(ctx, client, pinnedURL, tmdPath, nil)
+		tmdErr = downloadFile(ctx, client, pinnedURL, tmdPath, -1, nil)
 		if tmdErr != nil {
-			tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
+			tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
 		}
 	} else {
-		tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
+		tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, -1, nil)
 	}
 	if tmdErr != nil {
 		return tmdErr
@@ -2020,7 +2035,7 @@ func DownloadAndExtractTitle(
 	}
 
 	tikPath := filepath.Join(targetDir, "title.tik")
-	if err := downloadFile(ctx, client, fmt.Sprintf("%s/cetk", baseURL), tikPath, nil); err != nil {
+	if err := downloadFile(ctx, client, fmt.Sprintf("%s/cetk", baseURL), tikPath, -1, nil); err != nil {
 		return err
 	}
 
@@ -2031,8 +2046,9 @@ func DownloadAndExtractTitle(
 	useLowerCaseApp := normTID == "0005001010000400"
 
 	type dlTask struct {
-		url  string
-		path string
+		url          string
+		path         string
+		expectedSize int64
 	}
 	var tasks []dlTask
 
@@ -2045,8 +2061,9 @@ func DownloadAndExtractTitle(
 		}
 
 		tasks = append(tasks, dlTask{
-			url:  fmt.Sprintf("%s/%08X", baseURL, c.ID),
-			path: filepath.Join(targetDir, appFileName),
+			url:          fmt.Sprintf("%s/%08x", baseURL, c.ID),
+			path:         filepath.Join(targetDir, appFileName),
+			expectedSize: int64(c.Size),
 		})
 		if (c.Type & 0x02) != 0 {
 			h3FileName := fmt.Sprintf("%08X.h3", c.ID)
@@ -2056,8 +2073,9 @@ func DownloadAndExtractTitle(
 				_ = os.Remove(filepath.Join(targetDir, fmt.Sprintf("%08x.h3", c.ID)))
 			}
 			tasks = append(tasks, dlTask{
-				url:  fmt.Sprintf("%s/%08X.h3", baseURL, c.ID),
-				path: filepath.Join(targetDir, h3FileName),
+				url:          fmt.Sprintf("%s/%08x.h3", baseURL, c.ID),
+				path:         filepath.Join(targetDir, h3FileName),
+				expectedSize: -1,
 			})
 		}
 	}
@@ -2078,7 +2096,7 @@ func DownloadAndExtractTitle(
 				return
 			}
 
-			if err := downloadFile(ctx, client, task.url, task.path, onProgress); err != nil {
+			if err := downloadFile(ctx, client, task.url, task.path, task.expectedSize, onProgress); err != nil {
 				errChan <- err
 			}
 		}(t)
