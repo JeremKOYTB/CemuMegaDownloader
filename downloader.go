@@ -775,7 +775,6 @@ func verifySingleContent(workDir string, c Content, titleBlock cipher.Block) err
 			} else {
 				decMode.CryptBlocks(decBuf[:nRead], buf[:nRead])
 				decSlice = decBuf[:nRead]
-				chunkLen = uint64(nRead)
 			}
 
 			if processedSize+uint64(len(decSlice)) >= c.Size {
@@ -817,8 +816,6 @@ func VerifyTitle(titleID, outputDirectory string) error {
 		tmdPath := filepath.Join(outputDir, "title.tmd")
 		tikPath := filepath.Join(outputDir, "title.tik")
 
-		// Si les fichiers de manifeste bruts (tmd, tik) et les fichiers .app sont présent,
-		// on valide directement l'intégrité des fichiers bruts téléchargés.
 		if _, err := os.Stat(tmdPath); err == nil {
 			if _, errTik := os.Stat(tikPath); errTik == nil {
 				tmd, titleKey, err := ReadTMDAndTitleKey(tmdPath, tikPath, titleID)
@@ -838,15 +835,13 @@ func VerifyTitle(titleID, outputDirectory string) error {
 									return err
 								}
 							}
-							return nil // Les fichiers .app bruts sont intacts
+							return nil
 						}
 					}
 				}
 			}
 		}
 
-		// Si les fichiers .app bruts ne sont plus présents (après extraction/nettoyage),
-		// on vérifie les fichiers déchiffrés .dec
 		switch normTID {
 		case "0005001010000100":
 			decP := filepath.Join(outputDir, "00000009.dec")
@@ -1291,11 +1286,30 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 	if isFST {
 		if shouldKeepCodeFSTAndTMD(normTID) {
 			tmdToWrite := rawTMD
+			fstToWrite := fstDec
+
+			if normTID == "0005001010041200" {
+				resp, err := http.Get("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/0005001010041100/tmd")
+				if err == nil && resp.StatusCode == http.StatusOK {
+					if usaTMD, errRead := io.ReadAll(resp.Body); errRead == nil && len(usaTMD) > 0 {
+						tmdToWrite = usaTMD
+					}
+					_ = resp.Body.Close()
+				}
+
+				if len(fstToWrite) > 0x8E {
+					fstCopy := make([]byte, len(fstToWrite))
+					copy(fstCopy, fstToWrite)
+					fstCopy[0x8E] = 0x11
+					fstToWrite = fstCopy
+				}
+			}
+
 			if shouldTrimCodeTMD(normTID) {
-				tmdToWrite = getTrimmedTMDBytes(rawTMD, tmd)
+				tmdToWrite = getTrimmedTMDBytes(tmdToWrite, tmd)
 			}
 			_ = os.WriteFile(filepath.Join(codeDir, "title.tmd"), tmdToWrite, 0644)
-			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstDec, 0644)
+			_ = os.WriteFile(filepath.Join(codeDir, "title.fst"), fstToWrite, 0644)
 		}
 
 		contentMap := make(map[uint16]Content, len(tmd.Contents))
