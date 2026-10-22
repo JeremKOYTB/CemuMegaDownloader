@@ -832,11 +832,9 @@ func VerifyTitle(titleID, outputDirectory string) error {
 					}
 				}
 				if normTID == "0005001010000400" {
-					if _, errCert := os.Stat(filepath.Join(outputDir, "title.cert")); errCert != nil {
-						decP := filepath.Join(outputDir, "00000000.dec")
-						if st, errDec := os.Stat(decP); errDec != nil || st.Size() == 0 {
-							return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
-						}
+					decP := filepath.Join(outputDir, "00000000.dec")
+					if st, errDec := os.Stat(decP); errDec != nil || st.Size() == 0 {
+						return fmt.Errorf("missing or empty 00000000.dec for %s", titleID)
 					}
 				}
 				return nil
@@ -1161,7 +1159,12 @@ func shouldZeroBootLogo(normTID string) bool {
 
 func shouldKeepCodeFSTAndTMD(normTID string) bool {
 	if strings.HasPrefix(normTID, "0005001b") {
-		return true
+		switch normTID {
+		case "0005001b10067200", "0005001b10069200":
+			return false
+		default:
+			return true
+		}
 	}
 	switch normTID {
 	case "0005001010041200", "0005001010041100", "0005001010041000",
@@ -1416,61 +1419,48 @@ func GetMenuTIDLow(region string) string {
 func GetMiiMakerTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004A100"
+		return "1004a100"
 	case "JPN":
-		return "1004A000"
+		return "1004a000"
 	default:
-		return "1004A200"
+		return "1004a200"
 	}
 }
 
 func GetDailyLogTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004C100"
+		return "1004c100"
 	case "JPN":
-		return "1004C000"
+		return "1004c000"
 	default:
-		return "1004C200"
+		return "1004c200"
 	}
 }
 
 func GetNotificationsTIDLow(region string) string {
 	switch region {
 	case "USA":
-		return "1004D100"
+		return "1004d100"
 	case "JPN":
-		return "1004D000"
+		return "1004d000"
 	default:
-		return "1004D200"
-	}
-}
-
-func GetSystemSettingsTIDLow(region string) string {
-	switch strings.ToUpper(region) {
-	case "USA":
-		return "10047100"
-	case "JPN":
-		return "10047000"
-	default:
-		return "10047200"
+		return "1004d200"
 	}
 }
 
 func GetSaveMetaTIDLows(region string) []string {
 	return []string{
 		GetMenuTIDLow(region),
-		GetMiiMakerTIDLow(region),
 		GetDailyLogTIDLow(region),
 		GetNotificationsTIDLow(region),
-		GetSystemSettingsTIDLow(region),
 		"10066000",
 	}
 }
 
 func copySysMetaToSave(mlcRoot, tidLow string) (int, error) {
-	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
-	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta")
+	srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", strings.ToUpper(tidLow), "meta")
+	dstDir := filepath.Join(mlcRoot, "usr", "save", "00050010", strings.ToLower(tidLow), "meta")
 
 	if _, err := os.Stat(srcDir); err != nil {
 		return 0, nil
@@ -1594,54 +1584,6 @@ func initSystemActData(mlcRoot string) error {
 	return nil
 }
 
-func initMiiStudioSave(commonDir string) error {
-	savePath := filepath.Join(commonDir, "stadio.sav")
-	if _, err := os.Stat(savePath); err == nil {
-		return nil
-	}
-	data := make([]byte, 212992)
-	data[0x0] = 0x4D
-	data[0x1] = 0x53
-	data[0x2] = 0x55
-	data[0x5] = 0x01
-	data[0x7] = 0x05
-	data[0x11] = 0xBA
-	data[0x12] = 0xCC
-	data[0x13] = 0xC3
-	data[0x14] = 0xF9
-	data[0x15] = 0x57
-	data[0x16] = 0x1B
-	data[0x17] = 0xC7
-	data[0x1B] = 0x03
-	data[0x1C] = 0x01
-	data[0x43] = 0x01
-	data[0x44] = 0x01
-	data[0x4007] = 0x02
-	data[0x400F] = 0x02
-	data[0x4010] = 0xDF
-	data[0x4011] = 0xCD
-	data[0x4012] = 0xE8
-	data[0x4013] = 0x3F
-	data[0x4014] = 0x0E
-	data[0x4015] = 0x20
-	data[0x4016] = 0x13
-	data[0x4017] = 0x84
-	data[0x401E] = 0x02
-	data[0x32E07] = 0x01
-	data[0x32E0F] = 0x01
-	data[0x32E10] = 0x01
-	data[0x32E12] = 0x01
-	data[0x32E14] = 0x01
-	data[0x32E16] = 0x01
-	data[0x32E18] = 0x01
-	data[0x32E1E] = 0x02
-	data[0x33107] = 0x02
-	data[0x3310F] = 0x02
-	data[0x33113] = 0x01
-	data[0x33117] = 0x3B
-	return os.WriteFile(savePath, data, 0644)
-}
-
 func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	menuTID := GetMenuTIDLow(region)
 	miiMakerTID := GetMiiMakerTIDLow(region)
@@ -1669,27 +1611,14 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 		return totalCopied, fmt.Errorf("failed to initialize Mii database: %w", err)
 	}
 	_ = initSystemActData(mlcRoot)
-	if err := initMiiStudioSave(miiCommonDir); err != nil {
-		return totalCopied, fmt.Errorf("failed to initialize Mii Studio save: %w", err)
-	}
 
 	_ = os.MkdirAll(filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "80000001"), 0755)
-
-	n, err = copySysMetaToSave(mlcRoot, miiMakerTID)
-	if err == nil {
-		totalCopied += n
-	}
 
 	for _, tidLow := range []string{GetDailyLogTIDLow(region), GetNotificationsTIDLow(region), "10066000"} {
 		n, err := copySysMetaToSave(mlcRoot, tidLow)
 		if err != nil {
 			return totalCopied, err
 		}
-		totalCopied += n
-	}
-
-	n, err = copySysMetaToSave(mlcRoot, GetSystemSettingsTIDLow(region))
-	if err == nil {
 		totalCopied += n
 	}
 
@@ -1775,12 +1704,7 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 		warnings = append(warnings, "Wii U Menu save path not created")
 	}
 
-	miiCommonDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common")
-	if _, err := os.Stat(filepath.Join(miiCommonDir, "stadio.sav")); err != nil {
-		warnings = append(warnings, "Mii Studio save file missing: stadio.sav")
-	}
-
-	miiDBDir := filepath.Join(miiCommonDir, "db")
+	miiDBDir := filepath.Join(mlcRoot, "usr", "save", "00050010", miiMakerTID, "user", "common", "db")
 	for _, db := range []string{"FFL_ODB.dat", "FCL_DB.dat"} {
 		if _, err := os.Stat(filepath.Join(miiDBDir, db)); err != nil {
 			warnings = append(warnings, fmt.Sprintf("Mii database file missing: %s", db))
@@ -1788,17 +1712,9 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 	}
 
 	for _, tidLow := range GetSaveMetaTIDLows(region) {
-		srcDir := filepath.Join(mlcRoot, "sys", "title", "00050010", tidLow, "meta")
-		if _, err := os.Stat(srcDir); err != nil {
-			continue
-		}
+		dst := filepath.Join(mlcRoot, "usr", "save", "00050010", strings.ToLower(tidLow), "meta")
 		for _, name := range []string{"iconTex.tga", "meta.xml"} {
-			src := filepath.Join(srcDir, name)
-			if _, err := os.Stat(src); err != nil {
-				continue
-			}
-			dst := filepath.Join(mlcRoot, "usr", "save", "00050010", tidLow, "meta", name)
-			if _, err := os.Stat(dst); err != nil {
+			if _, err := os.Stat(filepath.Join(dst, name)); err != nil {
 				warnings = append(warnings, fmt.Sprintf("Save meta missing: %s/%s", tidLow, name))
 			}
 		}
@@ -1809,9 +1725,9 @@ func ValidateCemu2xSetup(mlcRoot, cemuDir, region string) []string {
 		"10057000", "10058000", "1005C000", "10063000",
 	}
 	for _, sTID := range sharedTIDs {
-		dir := filepath.Join(mlcRoot, "sys", "title", "0005001b", sTID)
+		dir := filepath.Join(mlcRoot, "sys", "title", "0005001B", sTID)
 		if _, err := os.Stat(dir); err != nil {
-			warnings = append(warnings, fmt.Sprintf("Shared data title missing: 0005001b%s", sTID))
+			warnings = append(warnings, fmt.Sprintf("Shared data title missing: 0005001B%s", sTID))
 		}
 	}
 
@@ -1827,6 +1743,7 @@ func CleanRawNUSFiles(dir string, titleID string) {
 	}
 
 	if normTID == "0005001010000400" || normTID == "0005001010066000" {
+		_ = os.Remove(filepath.Join(dir, "title.cert"))
 		return
 	}
 
