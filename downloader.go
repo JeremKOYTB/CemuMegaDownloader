@@ -1491,8 +1491,10 @@ func DecryptAndExtractTitle(workDir, targetDir string, titleID string) error {
 				if eLen <= i || eLen > totalEntries {
 					return fmt.Errorf("invalid FST directory boundary %d at entry %d", eLen, i)
 				}
-				if err := os.MkdirAll(currentPath, 0755); err != nil {
-					return err
+				if (eType & 0x80) == 0 {
+					if err := os.MkdirAll(currentPath, 0755); err != nil {
+						return err
+					}
 				}
 				pathStack = append(pathStack, currentPath)
 				endStack = append(endStack, eLen)
@@ -1696,10 +1698,6 @@ func getPinnedTitleVersion(normTID string) int {
 		return 178
 	case "0005001010049200":
 		return 103
-	case "0005001b10050000":
-		return 64
-	case "0005001b10059200":
-		return 128
 	}
 	return 0
 }
@@ -1743,22 +1741,11 @@ func initSystemPDMData(mlcRoot string) error {
 }
 
 func initSystemActData(mlcRoot string) error {
-	actDir := filepath.Join(mlcRoot, "usr", "save", "system", "act")
-	if err := os.MkdirAll(filepath.Join(actDir, "80000001"), 0755); err != nil {
-		return err
+	for _, sysSub := range []string{"config", "import", "update"} {
+		_ = os.MkdirAll(filepath.Join(mlcRoot, "sys", sysSub), 0755)
 	}
-	persisFile := filepath.Join(actDir, "persisid.dat")
-	if _, err := os.Stat(persisFile); os.IsNotExist(err) {
-		_ = os.WriteFile(persisFile, []byte("PersistentIdManager_20120607\r\nPersistentIdHead=80000001\r\n\r\n"), 0644)
-	}
-	actFile := filepath.Join(actDir, "80000001", "account.dat")
-	if _, err := os.Stat(actFile); err == nil {
-		return nil
-	}
-	content := "AccountInstance_20120705\r\nPersistentId=80000001\r\nTransferableIdBase=2000004480a321a\r\nUuid=c2d56199dcb71ded5d09ec93480a321a\r\nAccountId=\r\nSimpleAddressId=0\r\nPrincipalId=0\r\nAccountPassword=\r\nParentalControlsPin=\r\n"
-	return os.WriteFile(actFile, []byte(content), 0644)
+	return nil
 }
-
 
 func initMiiStudioSave(commonDir string) error {
 	savePath := filepath.Join(commonDir, "stadio.sav")
@@ -1818,7 +1805,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 
 	totalCopied := 0
 
-	n, err := copyMenuMetaToSave(mlcRoot, menuTID, menuTID)
+	n, err := copySysMetaToSave(mlcRoot, menuTID)
 	if err != nil {
 		return totalCopied, fmt.Errorf("failed to copy Wii U Menu meta: %w", err)
 	}
@@ -1829,7 +1816,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	if err := initMiiDatabaseFiles(miiDBDir); err != nil {
 		return totalCopied, fmt.Errorf("failed to initialize Mii database: %w", err)
 	}
-		_ = initSystemActData(mlcRoot)
+	_ = initSystemActData(mlcRoot)
 	if err := initMiiStudioSave(miiCommonDir); err != nil {
 		return totalCopied, fmt.Errorf("failed to initialize Mii Studio save: %w", err)
 	}
@@ -1842,7 +1829,7 @@ func SetupCemu2xSaveData(mlcRoot, region string) (int, error) {
 	}
 
 	for _, tidLow := range []string{GetDailyLogTIDLow(region), GetNotificationsTIDLow(region), "10066000"} {
-		n, err := copyMenuMetaToSave(mlcRoot, menuTID, tidLow)
+		n, err := copySysMetaToSave(mlcRoot, tidLow)
 		if err != nil {
 			return totalCopied, err
 		}
@@ -2043,33 +2030,52 @@ func CleanRawNUSFiles(dir string, titleID string) {
 	}
 }
 
+func fetchTMDBytesWithFallback(ctx context.Context, client *http.Client, cleanTID string) ([]byte, error) {
+	baseURL := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s", cleanTID)
+	var urls []string
+	if v := getPinnedTitleVersion(cleanTID); v > 0 {
+		urls = append(urls, fmt.Sprintf("%s/tmd.%d", baseURL, v))
+	}
+	urls = append(urls, fmt.Sprintf("%s/tmd", baseURL))
+
+	var lastErr error
+	for _, u := range urls {
+		reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
+		if err != nil {
+			cancel()
+			lastErr = err
+			continue
+		}
+		req.Header.Set("User-Agent", "WiiUDownloader")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			cancel()
+			lastErr = fmt.Errorf("HTTP %d for %s", resp.StatusCode, u)
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPMetadataBytes))
+		resp.Body.Close()
+		cancel()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return data, nil
+	}
+	return nil, lastErr
+}
+
 func GetTitleSize(titleID string, client *http.Client) (int64, error) {
 	cleanTID := NormalizeTID(titleID)
-	url := fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s/tmd", cleanTID)
-	if v := getPinnedTitleVersion(cleanTID); v > 0 {
-		url = fmt.Sprintf("http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/%s/tmd.%d", cleanTID, v)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("User-Agent", "WiiUDownloader")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPMetadataBytes))
+	data, err := fetchTMDBytesWithFallback(context.Background(), client, cleanTID)
 	if err != nil {
 		return 0, err
 	}
@@ -2202,13 +2208,19 @@ func DownloadAndExtractTitle(
 		return err
 	}
 
-	tmdURL := fmt.Sprintf("%s/tmd", baseURL)
-	if v := getPinnedTitleVersion(normTID); v > 0 {
-		tmdURL = fmt.Sprintf("%s/tmd.%d", baseURL, v)
-	}
 	tmdPath := filepath.Join(targetDir, "title.tmd")
-	if err := downloadFile(ctx, client, tmdURL, tmdPath, nil); err != nil {
-		return err
+	var tmdErr error
+	if v := getPinnedTitleVersion(normTID); v > 0 {
+		pinnedURL := fmt.Sprintf("%s/tmd.%d", baseURL, v)
+		tmdErr = downloadFile(ctx, client, pinnedURL, tmdPath, nil)
+		if tmdErr != nil {
+			tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
+		}
+	} else {
+		tmdErr = downloadFile(ctx, client, fmt.Sprintf("%s/tmd", baseURL), tmdPath, nil)
+	}
+	if tmdErr != nil {
+		return tmdErr
 	}
 
 	tmdData, err := os.ReadFile(tmdPath)
